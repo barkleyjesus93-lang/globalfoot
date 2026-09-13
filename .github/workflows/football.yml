@@ -1,4 +1,4 @@
-name: GlobalFoot Match Test
+name: GlobalFoot Goal Test
 
 on:
   workflow_dispatch:
@@ -8,29 +8,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get match details
+      - name: Detect goals
         run: |
           python - <<'PY'
           import requests
 
-          url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+          scoreboard_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
 
-          response = requests.get(url, timeout=20)
+          response = requests.get(scoreboard_url, timeout=20)
           response.raise_for_status()
 
           data = response.json()
 
           for event in data.get("events", []):
-              competition = event.get("competitions", [{}])[0]
-              competitors = competition.get("competitors", [])
+              event_id = event.get("id")
+              match_name = event.get("name")
 
-              print("\nMATCH:", event.get("name"))
+              summary_url = (
+                  "https://site.api.espn.com/apis/site/v2/"
+                  f"sports/soccer/eng.1/summary?event={event_id}"
+              )
 
-              for team in competitors:
-                  print(
-                      "Équipe:",
-                      team.get("team", {}).get("displayName"),
-                      "| Score:",
-                      team.get("score")
-                  )
+              summary_response = requests.get(summary_url, timeout=20)
+              summary_response.raise_for_status()
+
+              summary = summary_response.json()
+
+              print("\nMATCH:", match_name)
+
+              for play in summary.get("plays", []):
+                  if play.get("scoringPlay"):
+                      clock = play.get("clock", {}).get("displayValue", "?")
+                      text = play.get("text", "But détecté")
+
+                      print("⚽ BUT |", clock, "|", text)
           PY
