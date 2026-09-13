@@ -1,4 +1,4 @@
-name: GlobalFoot ESPN Events Test
+name: GlobalFoot Goal Diagnostic
 
 on:
   workflow_dispatch:
@@ -8,24 +8,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Inspect ESPN events
+      - name: Inspect ESPN summary
         run: |
           python - <<'PY'
           import requests
           import json
 
-          url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+          event_id = "401879022"
+
+          url = (
+              "https://site.api.espn.com/apis/site/v2/"
+              f"sports/soccer/eng.1/summary?event={event_id}"
+          )
 
           response = requests.get(url, timeout=20)
           response.raise_for_status()
 
           data = response.json()
 
-          for event in data.get("events", []):
-              print("\n==============================")
-              print("MATCH:", event.get("name"))
-              print("ID:", event.get("id"))
+          print("=== CLÉS PRINCIPALES ===")
+          print(list(data.keys()))
 
-              print("\nDETAILS:")
-              print(json.dumps(event, indent=2)[:8000])
+          print("\n=== PLAYS ===")
+          print("Nombre :", len(data.get("plays", [])))
+
+          print("\n=== KEY EVENTS ===")
+          print("Nombre :", len(data.get("keyEvents", [])))
+
+          print("\n=== PREMIER KEY EVENT ===")
+          if data.get("keyEvents"):
+              print(json.dumps(data["keyEvents"][0], indent=2)[:5000])
+
+          print("\n=== PREMIER PLAY ===")
+          if data.get("plays"):
+              print(json.dumps(data["plays"][0], indent=2)[:5000])
           PY
