@@ -1,4 +1,4 @@
-name: GlobalFoot ESPN Test
+name: GlobalFoot Match Test
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test ESPN
+      - name: Get match details
         run: |
           python - <<'PY'
           import requests
@@ -20,10 +20,17 @@ jobs:
 
           data = response.json()
 
-          print("✅ ESPN fonctionne")
-          print("Matchs trouvés :", len(data.get("events", [])))
-
           for event in data.get("events", []):
-              name = event.get("name", "Match inconnu")
-              print("-", name)
+              competition = event.get("competitions", [{}])[0]
+              competitors = competition.get("competitors", [])
+
+              print("\nMATCH:", event.get("name"))
+
+              for team in competitors:
+                  print(
+                      "Équipe:",
+                      team.get("team", {}).get("displayName"),
+                      "| Score:",
+                      team.get("score")
+                  )
           PY
