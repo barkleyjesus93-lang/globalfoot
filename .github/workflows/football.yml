@@ -1,4 +1,4 @@
-name: GlobalFoot All Matches Test
+name: GlobalFoot Goal Memory Test
 
 on:
   workflow_dispatch:
@@ -8,11 +8,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Detect goals in all matches
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect new goals
         run: |
           python - <<'PY'
           import requests
-          import time
+          import json
+          import os
+
+          STATE_FILE = "seen_goals.json"
+
+          if os.path.exists(STATE_FILE):
+              with open(STATE_FILE, "r") as f:
+                  seen_goals = set(json.load(f))
+          else:
+              seen_goals = set()
 
           scoreboard_url = (
               "https://site.api.espn.com/apis/site/v2/"
@@ -20,26 +32,17 @@ jobs:
           )
 
           session = requests.Session()
-
-          response = session.get(
-              scoreboard_url,
-              timeout=20
-          )
+          response = session.get(scoreboard_url, timeout=20)
           response.raise_for_status()
 
           data = response.json()
 
-          print("MATCHS TROUVÉS :", len(data.get("events", [])))
-
-          total_goals = 0
+          new_goals = []
+          updated_seen = set(seen_goals)
 
           for match in data.get("events", []):
 
               event_id = match.get("id")
-              match_name = match.get("name")
-
-              print("\n==============================")
-              print("MATCH :", match_name)
 
               summary_url = (
                   "https://site.api.espn.com/apis/site/v2/"
@@ -47,67 +50,70 @@ jobs:
               )
 
               try:
-                  summary_response = session.get(
-                      summary_url,
-                      timeout=20
-                  )
-                  summary_response.raise_for_status()
-
-                  summary = summary_response.json()
-
-              except requests.exceptions.RequestException as error:
-                  print("⚠️ ERREUR ESPN :", error)
-                  print("➡️ Match ignoré, le workflow continue.")
+                  r = session.get(summary_url, timeout=20)
+                  r.raise_for_status()
+                  summary = r.json()
+              except requests.exceptions.RequestException:
                   continue
-
-              match_goals = 0
 
               for event in summary.get("keyEvents", []):
 
-                  if event.get("scoringPlay") is True:
+                  if event.get("scoringPlay") is not True:
+                      continue
 
-                      match_goals += 1
-                      total_goals += 1
+                  goal_id = f"{event_id}-{event.get('id')}"
 
-                      minute = event.get(
-                          "clock", {}
-                      ).get(
-                          "displayValue", "?"
-                      )
+                  if goal_id in seen_goals:
+                      continue
 
-                      team = event.get(
-                          "team", {}
+                  minute = event.get("clock", {}).get(
+                      "displayValue", "?"
+                  )
+
+                  team = event.get("team", {}).get(
+                      "displayName",
+                      "Équipe inconnue"
+                  )
+
+                  player = "Joueur inconnu"
+
+                  participants = event.get(
+                      "participants", []
+                  )
+
+                  if participants:
+                      player = participants[0].get(
+                          "athlete", {}
                       ).get(
                           "displayName",
-                          "Équipe inconnue"
+                          "Joueur inconnu"
                       )
 
-                      participants = event.get(
-                          "participants", []
-                      )
+                  print(
+                      f"🆕 NOUVEAU BUT | {minute} | "
+                      f"{team} | {player}"
+                  )
 
-                      player = "Joueur inconnu"
+                  new_goals.append(goal_id)
+                  updated_seen.add(goal_id)
 
-                      if participants:
-                          player = participants[0].get(
-                              "athlete", {}
-                          ).get(
-                              "displayName",
-                              "Joueur inconnu"
-                          )
+          with open(STATE_FILE, "w") as f:
+              json.dump(sorted(updated_seen), f, indent=2)
 
-                      print(
-                          f"⚽ BUT | {minute} | "
-                          f"{team} | {player}"
-                      )
-
-              print(
-                  "Buts détectés dans ce match :",
-                  match_goals
-              )
-
-              time.sleep(1)
-
-          print("\n==============================")
-          print("TOTAL DES BUTS :", total_goals)
+          print("\nNouveaux buts :", len(new_goals))
+          print("Mémoire totale :", len(updated_seen))
           PY
+
+      - name: Save goal memory
+        run: |
+          git config user.name "GlobalFoot Bot"
+          git config user.email "actions@github.com"
+
+          git add seen_goals.json
+
+          if git diff --cached --quiet; then
+            echo "Aucun nouveau but à mémoriser."
+          else
+            git commit -m "Update goal memory"
+            git push
+          fi
