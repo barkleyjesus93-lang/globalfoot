@@ -1,4 +1,4 @@
-name: GlobalFoot Test
+name: GlobalFoot ESPN Test
 
 on:
   workflow_dispatch:
@@ -6,6 +6,24 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Test GlobalFoot
-        run: echo "GlobalFoot fonctionne"
+      - name: Test ESPN
+        run: |
+          python - <<'PY'
+          import requests
+
+          url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+
+          response = requests.get(url, timeout=20)
+          response.raise_for_status()
+
+          data = response.json()
+
+          print("✅ ESPN fonctionne")
+          print("Matchs trouvés :", len(data.get("events", [])))
+
+          for event in data.get("events", []):
+              name = event.get("name", "Match inconnu")
+              print("-", name)
+          PY
