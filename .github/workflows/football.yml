@@ -12,13 +12,19 @@ jobs:
         run: |
           python - <<'PY'
           import requests
+          import time
 
           scoreboard_url = (
               "https://site.api.espn.com/apis/site/v2/"
               "sports/soccer/eng.1/scoreboard"
           )
 
-          response = requests.get(scoreboard_url, timeout=20)
+          session = requests.Session()
+
+          response = session.get(
+              scoreboard_url,
+              timeout=20
+          )
           response.raise_for_status()
 
           data = response.json()
@@ -28,28 +34,36 @@ jobs:
           total_goals = 0
 
           for match in data.get("events", []):
+
               event_id = match.get("id")
               match_name = match.get("name")
+
+              print("\n==============================")
+              print("MATCH :", match_name)
 
               summary_url = (
                   "https://site.api.espn.com/apis/site/v2/"
                   f"sports/soccer/eng.1/summary?event={event_id}"
               )
 
-              summary_response = requests.get(
-                  summary_url,
-                  timeout=20
-              )
-              summary_response.raise_for_status()
+              try:
+                  summary_response = session.get(
+                      summary_url,
+                      timeout=20
+                  )
+                  summary_response.raise_for_status()
 
-              summary = summary_response.json()
+                  summary = summary_response.json()
 
-              print("\n==============================")
-              print("MATCH :", match_name)
+              except requests.exceptions.RequestException as error:
+                  print("⚠️ ERREUR ESPN :", error)
+                  print("➡️ Match ignoré, le workflow continue.")
+                  continue
 
               match_goals = 0
 
               for event in summary.get("keyEvents", []):
+
                   if event.get("scoringPlay") is True:
 
                       match_goals += 1
@@ -91,6 +105,8 @@ jobs:
                   "Buts détectés dans ce match :",
                   match_goals
               )
+
+              time.sleep(1)
 
           print("\n==============================")
           print("TOTAL DES BUTS :", total_goals)
