@@ -1,4 +1,4 @@
-name: GlobalFoot Goal Diagnostic
+name: GlobalFoot All Matches Test
 
 on:
   workflow_dispatch:
@@ -8,63 +8,90 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Detect ESPN goals
+      - name: Detect goals in all matches
         run: |
           python - <<'PY'
           import requests
 
-          event_id = "401879022"
-
-          url = (
+          scoreboard_url = (
               "https://site.api.espn.com/apis/site/v2/"
-              f"sports/soccer/eng.1/summary?event={event_id}"
+              "sports/soccer/eng.1/scoreboard"
           )
 
-          response = requests.get(url, timeout=20)
+          response = requests.get(scoreboard_url, timeout=20)
           response.raise_for_status()
 
           data = response.json()
 
-          print("=== ESPN KEY EVENTS ===")
+          print("MATCHS TROUVÉS :", len(data.get("events", [])))
 
-          goals = 0
+          total_goals = 0
 
-          for event in data.get("keyEvents", []):
-              if event.get("scoringPlay") is True:
-                  goals += 1
+          for match in data.get("events", []):
+              event_id = match.get("id")
+              match_name = match.get("name")
 
-                  minute = event.get("clock", {}).get(
-                      "displayValue", "?"
-                  )
+              summary_url = (
+                  "https://site.api.espn.com/apis/site/v2/"
+                  f"sports/soccer/eng.1/summary?event={event_id}"
+              )
 
-                  text = event.get(
-                      "text", "But détecté"
-                  )
+              summary_response = requests.get(
+                  summary_url,
+                  timeout=20
+              )
+              summary_response.raise_for_status()
 
-                  team = event.get(
-                      "team", {}
-                  ).get(
-                      "displayName", "Équipe inconnue"
-                  )
+              summary = summary_response.json()
 
-                  participants = event.get(
-                      "participants", []
-                  )
+              print("\n==============================")
+              print("MATCH :", match_name)
 
-                  player = "Joueur inconnu"
+              match_goals = 0
 
-                  if participants:
-                      player = participants[0].get(
-                          "athlete", {}
+              for event in summary.get("keyEvents", []):
+                  if event.get("scoringPlay") is True:
+
+                      match_goals += 1
+                      total_goals += 1
+
+                      minute = event.get(
+                          "clock", {}
                       ).get(
-                          "displayName",
-                          "Joueur inconnu"
+                          "displayValue", "?"
                       )
 
-                  print(
-                      f"⚽ BUT | {minute} | "
-                      f"{team} | {player} | {text}"
-                  )
+                      team = event.get(
+                          "team", {}
+                      ).get(
+                          "displayName",
+                          "Équipe inconnue"
+                      )
 
-          print("\nNombre de buts détectés :", goals)
+                      participants = event.get(
+                          "participants", []
+                      )
+
+                      player = "Joueur inconnu"
+
+                      if participants:
+                          player = participants[0].get(
+                              "athlete", {}
+                          ).get(
+                              "displayName",
+                              "Joueur inconnu"
+                          )
+
+                      print(
+                          f"⚽ BUT | {minute} | "
+                          f"{team} | {player}"
+                      )
+
+              print(
+                  "Buts détectés dans ce match :",
+                  match_goals
+              )
+
+          print("\n==============================")
+          print("TOTAL DES BUTS :", total_goals)
           PY
