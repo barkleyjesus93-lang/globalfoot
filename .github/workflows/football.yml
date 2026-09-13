@@ -8,11 +8,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Inspect ESPN summary
+      - name: Detect ESPN goals
         run: |
           python - <<'PY'
           import requests
-          import json
 
           event_id = "401879022"
 
@@ -26,20 +25,46 @@ jobs:
 
           data = response.json()
 
-          print("=== CLÉS PRINCIPALES ===")
-          print(list(data.keys()))
+          print("=== ESPN KEY EVENTS ===")
 
-          print("\n=== PLAYS ===")
-          print("Nombre :", len(data.get("plays", [])))
+          goals = 0
 
-          print("\n=== KEY EVENTS ===")
-          print("Nombre :", len(data.get("keyEvents", [])))
+          for event in data.get("keyEvents", []):
+              if event.get("scoringPlay") is True:
+                  goals += 1
 
-          print("\n=== PREMIER KEY EVENT ===")
-          if data.get("keyEvents"):
-              print(json.dumps(data["keyEvents"][0], indent=2)[:5000])
+                  minute = event.get("clock", {}).get(
+                      "displayValue", "?"
+                  )
 
-          print("\n=== PREMIER PLAY ===")
-          if data.get("plays"):
-              print(json.dumps(data["plays"][0], indent=2)[:5000])
+                  text = event.get(
+                      "text", "But détecté"
+                  )
+
+                  team = event.get(
+                      "team", {}
+                  ).get(
+                      "displayName", "Équipe inconnue"
+                  )
+
+                  participants = event.get(
+                      "participants", []
+                  )
+
+                  player = "Joueur inconnu"
+
+                  if participants:
+                      player = participants[0].get(
+                          "athlete", {}
+                      ).get(
+                          "displayName",
+                          "Joueur inconnu"
+                      )
+
+                  print(
+                      f"⚽ BUT | {minute} | "
+                      f"{team} | {player} | {text}"
+                  )
+
+          print("\nNombre de buts détectés :", goals)
           PY
