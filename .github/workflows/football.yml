@@ -1,4 +1,4 @@
-name: GlobalFoot Goal Test
+name: GlobalFoot ESPN Events Test
 
 on:
   workflow_dispatch:
@@ -8,38 +8,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Detect goals
+      - name: Inspect ESPN events
         run: |
           python - <<'PY'
           import requests
+          import json
 
-          scoreboard_url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+          url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
 
-          response = requests.get(scoreboard_url, timeout=20)
+          response = requests.get(url, timeout=20)
           response.raise_for_status()
 
           data = response.json()
 
           for event in data.get("events", []):
-              event_id = event.get("id")
-              match_name = event.get("name")
+              print("\n==============================")
+              print("MATCH:", event.get("name"))
+              print("ID:", event.get("id"))
 
-              summary_url = (
-                  "https://site.api.espn.com/apis/site/v2/"
-                  f"sports/soccer/eng.1/summary?event={event_id}"
-              )
-
-              summary_response = requests.get(summary_url, timeout=20)
-              summary_response.raise_for_status()
-
-              summary = summary_response.json()
-
-              print("\nMATCH:", match_name)
-
-              for play in summary.get("plays", []):
-                  if play.get("scoringPlay"):
-                      clock = play.get("clock", {}).get("displayValue", "?")
-                      text = play.get("text", "But détecté")
-
-                      print("⚽ BUT |", clock, "|", text)
+              print("\nDETAILS:")
+              print(json.dumps(event, indent=2)[:8000])
           PY
