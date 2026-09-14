@@ -4,48 +4,14 @@ const ESPN_BASE =
   "https://site.api.espn.com/apis/site/v2/sports/soccer";
 
 // =====================================================
-// 5 GROUPES = 5 CRON TRIGGERS
-// Chaque compétition est vérifiée toutes les 5 minutes.
+// TEST CRON
+// Vérifie Premier League + Ligue 1 toutes les 5 minutes.
 // =====================================================
 
 const GROUPS = {
-  "0-59/5 * * * *": [
+  "*/5 * * * *": [
     "eng.1",
-    "esp.1",
-    "ita.1",
-    "ger.1",
     "fra.1"
-  ],
-
-  "1-59/5 * * * *": [
-    "por.1",
-    "ned.1",
-    "bra.1",
-    "arg.1",
-    "uefa.champions"
-  ],
-
-  "2-59/5 * * * *": [
-    "uefa.europa",
-    "uefa.europa.conf",
-    "conmebol.libertadores",
-    "conmebol.sudamericana",
-    "conmebol.america"
-  ],
-
-  "3-59/5 * * * *": [
-    "fifa.world",
-    "caf.nations",
-    "concacaf.gold",
-    "afc.asian.cup",
-    "fifa.cwc"
-  ],
-
-  "4-59/5 * * * *": [
-    "eng.fa",
-    "esp.copa_del_rey",
-    "bra.copa_do_brazil",
-    "ksa.1"
   ]
 };
 
@@ -55,7 +21,6 @@ const GROUPS = {
 
 const RECENT_MATCH_MINUTES = 180;
 const EVENT_TTL_SECONDS = 60 * 60 * 24 * 90;
-
 
 // =====================================================
 // WORKER
@@ -84,14 +49,21 @@ export default {
     });
   },
 
-
   async scheduled(controller, env) {
 
-    console.log("🔥 GLOBALFOOT CRON EXÉCUTÉ :", controller.cron);
-    const competitions = GROUPS[controller.cron];
+    console.log(
+      "🔥 GLOBALFOOT CRON EXÉCUTÉ :",
+      controller.cron
+    );
+
+    const competitions =
+      GROUPS[controller.cron];
 
     if (!competitions) {
-      console.log("Cron inconnu :", controller.cron);
+      console.log(
+        "Cron inconnu :",
+        controller.cron
+      );
       return;
     }
 
@@ -119,7 +91,6 @@ export default {
   }
 };
 
-
 // =====================================================
 // SCAN COMPÉTITION
 // =====================================================
@@ -142,11 +113,13 @@ async function scanCompetition(
     return;
   }
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
-  const events = Array.isArray(data.events)
-    ? data.events
-    : [];
+  const events =
+    Array.isArray(data.events)
+      ? data.events
+      : [];
 
   for (const match of events) {
 
@@ -171,7 +144,6 @@ async function scanCompetition(
     }
   }
 }
-
 
 // =====================================================
 // MATCH INTÉRESSANT ?
@@ -207,7 +179,6 @@ function shouldInspectMatch(match) {
     ageMinutes <= RECENT_MATCH_MINUTES
   );
 }
-
 
 // =====================================================
 // RÉCUPÉRATION DES ÉVÉNEMENTS
@@ -250,7 +221,8 @@ async function inspectMatch(
   // Évite de publier deux fois le même événement
   // lorsqu'ESPN le représente dans plusieurs parties
   // du résumé.
-  const processed = new Set();
+  const processed =
+    new Set();
 
   for (
     let index = 0;
@@ -300,7 +272,6 @@ async function inspectMatch(
   }
 }
 
-
 // =====================================================
 // DÉTECTION DES 9 ÉVÉNEMENTS GLOBALFOOT
 // =====================================================
@@ -337,7 +308,6 @@ function detectEventType(event) {
   const penaltyAwarded =
     isPenaltyAwarded(event, text);
 
-
   // ===================================================
   // 1. DEUXIÈME JAUNE → ROUGE
   // ===================================================
@@ -345,7 +315,6 @@ function detectEventType(event) {
   if (secondYellow) {
     return "SECOND_YELLOW_RED";
   }
-
 
   // ===================================================
   // 2. CARTON ROUGE
@@ -355,7 +324,6 @@ function detectEventType(event) {
     return "RED_CARD";
   }
 
-
   // ===================================================
   // 3. CARTON JAUNE
   // ===================================================
@@ -363,7 +331,6 @@ function detectEventType(event) {
   if (yellow) {
     return "YELLOW_CARD";
   }
-
 
   // ===================================================
   // 4. PENALTY RATÉ
@@ -373,7 +340,6 @@ function detectEventType(event) {
     return "MISSED_PENALTY";
   }
 
-
   // ===================================================
   // 5. PENALTY ACCORDÉ
   // ===================================================
@@ -382,7 +348,6 @@ function detectEventType(event) {
     return "PENALTY_AWARDED";
   }
 
-
   // ===================================================
   // 6. BUT ANNULÉ
   // ===================================================
@@ -390,7 +355,6 @@ function detectEventType(event) {
   if (cancelledGoal) {
     return "CANCELLED_GOAL";
   }
-
 
   // ===================================================
   // 7. BUT
@@ -409,7 +373,6 @@ function detectEventType(event) {
     return "GOAL";
   }
 
-
   // ===================================================
   // 8. HORS-JEU SIMPLE
   // ===================================================
@@ -418,10 +381,8 @@ function detectEventType(event) {
     return "OFFSIDE_ONLY";
   }
 
-
   return null;
 }
-
 
 // =====================================================
 // TEXTE D'UN ÉVÉNEMENT
@@ -432,6 +393,7 @@ function getEventText(event) {
   let text = "";
 
   try {
+
     text += ` ${event?.text || ""}`;
     text += ` ${event?.type?.text || ""}`;
     text += ` ${event?.type?.name || ""}`;
@@ -440,13 +402,13 @@ function getEventText(event) {
     text += ` ${event?.description || ""}`;
     text += ` ${event?.shortText || ""}`;
     text += ` ${JSON.stringify(event || {})}`;
+
   } catch {
     // Rien
   }
 
   return text.toLowerCase();
 }
-
 
 // =====================================================
 // IDENTIFICATION DES ÉVÉNEMENTS
@@ -461,7 +423,6 @@ function isPenaltyEvent(event, text) {
   );
 }
 
-
 function isOwnGoal(event, text) {
 
   return (
@@ -471,7 +432,6 @@ function isOwnGoal(event, text) {
     text.includes("autogol")
   );
 }
-
 
 function isCancelledGoal(event, text) {
 
@@ -487,7 +447,6 @@ function isCancelledGoal(event, text) {
   );
 }
 
-
 function isOffside(event, text) {
 
   return (
@@ -495,7 +454,6 @@ function isOffside(event, text) {
     text.includes("hors-jeu")
   );
 }
-
 
 function isYellowCard(event, text) {
 
@@ -514,7 +472,6 @@ function isYellowCard(event, text) {
   );
 }
 
-
 function isRedCard(event, text) {
 
   return (
@@ -526,7 +483,6 @@ function isRedCard(event, text) {
   );
 }
 
-
 function isSecondYellow(event, text) {
 
   return (
@@ -537,7 +493,6 @@ function isSecondYellow(event, text) {
     text.includes("yellow-red")
   );
 }
-
 
 function isMissedPenalty(event, text) {
 
@@ -558,7 +513,6 @@ function isMissedPenalty(event, text) {
   );
 }
 
-
 function isPenaltyAwarded(event, text) {
 
   if (!isPenaltyEvent(event, text)) {
@@ -577,15 +531,16 @@ function isPenaltyAwarded(event, text) {
     text.includes("penalty awarded") ||
     text.includes("penalty given") ||
     text.includes("penalty won") ||
-    text.includes("penalty") &&
     (
-      text.includes("awarded") ||
-      text.includes("given") ||
-      text.includes("decision")
+      text.includes("penalty") &&
+      (
+        text.includes("awarded") ||
+        text.includes("given") ||
+        text.includes("decision")
+      )
     )
   );
 }
-
 
 // =====================================================
 // TRAITEMENT D'UN ÉVÉNEMENT
@@ -659,7 +614,6 @@ async function processEvent(
   );
 }
 
-
 // =====================================================
 // ID UNIQUE D'ÉVÉNEMENT
 // =====================================================
@@ -684,7 +638,6 @@ function createEventId(
     `event:${competition}:${matchId}:${eventType}:${eventId}`
   );
 }
-
 
 // =====================================================
 // JOUEUR / ACTEUR
@@ -720,7 +673,6 @@ function getEventPlayer(event) {
   return "Joueur";
 }
 
-
 // =====================================================
 // MINUTE
 // =====================================================
@@ -748,7 +700,6 @@ function getEventMinute(event) {
 
   return "?";
 }
-
 
 // =====================================================
 // SCORE
@@ -798,7 +749,6 @@ function getCurrentScore(match) {
   };
 }
 
-
 // =====================================================
 // NOM DU MATCH
 // =====================================================
@@ -809,7 +759,6 @@ function getMatchLine(score) {
     `📍 ${score.home.name} ${score.home.score}-${score.away.score} ${score.away.name}`
   );
 }
-
 
 // =====================================================
 // FORMAT GLOBALFOOT
@@ -825,7 +774,6 @@ function formatGlobalFootMessage(
 
   const matchLine =
     getMatchLine(score);
-
 
   // ================================================
   // BUT
@@ -843,7 +791,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-
   // ================================================
   // BUT CONTRE SON CAMP
   // ================================================
@@ -859,7 +806,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
 
   // ================================================
   // PENALTY MARQUÉ
@@ -877,7 +823,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-
   // ================================================
   // PENALTY RATÉ
   // ================================================
@@ -893,7 +838,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
 
   // ================================================
   // PENALTY ACCORDÉ
@@ -911,7 +855,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-
   // ================================================
   // BUT ANNULÉ
   // ================================================
@@ -928,18 +871,23 @@ ${matchLine}
       text.includes("offside") ||
       text.includes("hors-jeu")
     ) {
+
       reason =
         "Le but est annulé pour hors-jeu.";
+
     } else if (
       text.includes("foul") ||
       text.includes("faute")
     ) {
+
       reason =
         "Le but est annulé pour faute.";
+
     } else if (
       text.includes("var") ||
       text.includes("overturned")
     ) {
+
       reason =
         "Le but est annulé après vérification.";
     }
@@ -953,7 +901,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
 
   // ================================================
   // CARTON JAUNE
@@ -971,7 +918,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-
   // ================================================
   // CARTON ROUGE
   // ================================================
@@ -987,7 +933,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
 
   // ================================================
   // DEUXIÈME JAUNE → ROUGE
@@ -1005,10 +950,8 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-
   return null;
 }
-
 
 // =====================================================
 // FACEBOOK
@@ -1075,4 +1018,4 @@ async function publishToFacebook(
 
     data
   };
-}
+        }
