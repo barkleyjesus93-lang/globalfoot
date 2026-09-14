@@ -1,17 +1,20 @@
-name: GlobalFoot Goal Memory Test
+
+name: GlobalFoot Auto Post
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  globalfoot:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Detect new goals
+      - name: Detect and publish new goals
+        env:
+          FACEBOOK_PAGE_TOKEN: ${{ secrets.FACEBOOK_PAGE_TOKEN }}
         run: |
           python - <<'PY'
           import requests
@@ -19,6 +22,7 @@ jobs:
           import os
 
           STATE_FILE = "seen_goals.json"
+          PAGE_ID = "987662881093953"
 
           if os.path.exists(STATE_FILE):
               with open(STATE_FILE, "r") as f:
@@ -32,17 +36,25 @@ jobs:
           )
 
           session = requests.Session()
-          response = session.get(scoreboard_url, timeout=20)
+
+          response = session.get(
+              scoreboard_url,
+              timeout=20
+          )
           response.raise_for_status()
 
           data = response.json()
 
-          new_goals = []
           updated_seen = set(seen_goals)
+          new_count = 0
 
           for match in data.get("events", []):
 
               event_id = match.get("id")
+              match_name = match.get(
+                  "name",
+                  "Match inconnu"
+              )
 
               summary_url = (
                   "https://site.api.espn.com/apis/site/v2/"
@@ -50,10 +62,15 @@ jobs:
               )
 
               try:
-                  r = session.get(summary_url, timeout=20)
+                  r = session.get(
+                      summary_url,
+                      timeout=20
+                  )
                   r.raise_for_status()
                   summary = r.json()
-              except requests.exceptions.RequestException:
+
+              except requests.exceptions.RequestException as error:
+                  print("⚠️ Match ignoré :", error)
                   continue
 
               for event in summary.get("keyEvents", []):
@@ -66,11 +83,16 @@ jobs:
                   if goal_id in seen_goals:
                       continue
 
-                  minute = event.get("clock", {}).get(
-                      "displayValue", "?"
+                  minute = event.get(
+                      "clock", {}
+                  ).get(
+                      "displayValue",
+                      "?"
                   )
 
-                  team = event.get("team", {}).get(
+                  team = event.get(
+                      "team", {}
+                  ).get(
                       "displayName",
                       "Équipe inconnue"
                   )
@@ -78,29 +100,76 @@ jobs:
                   player = "Joueur inconnu"
 
                   participants = event.get(
-                      "participants", []
+                      "participants",
+                      []
                   )
 
                   if participants:
                       player = participants[0].get(
-                          "athlete", {}
+                          "athlete",
+                          {}
                       ).get(
                           "displayName",
                           "Joueur inconnu"
                       )
 
-                  print(
-                      f"🆕 NOUVEAU BUT | {minute} | "
-                      f"{team} | {player}"
+                  message = (
+                      f"⚽ BUT EN DIRECT !\n\n"
+                      f"🏆 {match_name}\n"
+                      f"⚽ {team}\n"
+                      f"👤 {player}\n"
+                      f"⏱️ {minute}\n\n"
+                      f"🌍 GlobalFoot"
                   )
 
-                  new_goals.append(goal_id)
-                  updated_seen.add(goal_id)
+                  print("\n🆕 NOUVEAU BUT")
+                  print(message)
+
+                  facebook_url = (
+                      f"https://graph.facebook.com/v26.0/"
+                      f"{PAGE_ID}/feed"
+                  )
+
+                  try:
+                      fb_response = session.post(
+                          facebook_url,
+                          data={
+                              "message": message,
+                              "access_token": os.environ[
+                                  "FACEBOOK_PAGE_TOKEN"
+                              ]
+                          },
+                          timeout=20
+                      )
+
+                      fb_response.raise_for_status()
+
+                      fb_data = fb_response.json()
+
+                      print(
+                          "✅ Publication Facebook réussie :",
+                          fb_data
+                      )
+
+                      updated_seen.add(goal_id)
+                      new_count += 1
+
+                  except requests.exceptions.RequestException as error:
+                      print(
+                          "❌ Publication Facebook échouée :",
+                          error
+                      )
+                      continue
 
           with open(STATE_FILE, "w") as f:
-              json.dump(sorted(updated_seen), f, indent=2)
+              json.dump(
+                  sorted(updated_seen),
+                  f,
+                  indent=2
+              )
 
-          print("\nNouveaux buts :", len(new_goals))
+          print("\n==============================")
+          print("Nouvelles publications :", new_count)
           print("Mémoire totale :", len(updated_seen))
           PY
 
@@ -112,7 +181,7 @@ jobs:
           git add seen_goals.json
 
           if git diff --cached --quiet; then
-            echo "Aucun nouveau but à mémoriser."
+            echo "Aucune nouvelle mémoire à sauvegarder."
           else
             git commit -m "Update goal memory"
             git push
