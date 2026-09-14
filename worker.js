@@ -3,61 +3,68 @@ const GRAPH_API_VERSION = "v26.0";
 const ESPN_BASE =
   "https://site.api.espn.com/apis/site/v2/sports/soccer";
 
-// 5 groupes = 5 Cron Triggers.
-// Chaque groupe revient toutes les 5 minutes.
+// =====================================================
+// 5 GROUPES = 5 CRON TRIGGERS
+// Chaque compétition est vérifiée toutes les 5 minutes.
+// =====================================================
+
 const GROUPS = {
   "0-59/5 * * * *": [
-    "eng.1",              // Premier League
-    "esp.1",              // La Liga
-    "ita.1",              // Serie A
-    "ger.1",              // Bundesliga
-    "fra.1"               // Ligue 1
+    "eng.1",
+    "esp.1",
+    "ita.1",
+    "ger.1",
+    "fra.1"
   ],
 
   "1-59/5 * * * *": [
-    "por.1",              // Primeira Liga
-    "ned.1",              // Eredivisie
-    "bra.1",              // Brasileirão
-    "arg.1",              // Liga Argentina
-    "uefa.champions"      // Champions League
+    "por.1",
+    "ned.1",
+    "bra.1",
+    "arg.1",
+    "uefa.champions"
   ],
 
   "2-59/5 * * * *": [
-    "uefa.europa",        // Europa League
-    "uefa.europa.conf",   // Conference League
+    "uefa.europa",
+    "uefa.europa.conf",
     "conmebol.libertadores",
     "conmebol.sudamericana",
-    "conmebol.america"    // Copa América
+    "conmebol.america"
   ],
 
   "3-59/5 * * * *": [
-    "fifa.world",         // Coupe du Monde
-    "caf.nations",        // CAN
-    "concacaf.gold",      // Gold Cup
-    "afc.asian.cup",      // Asian Cup
-    "fifa.cwc"            // Club World Cup
+    "fifa.world",
+    "caf.nations",
+    "concacaf.gold",
+    "afc.asian.cup",
+    "fifa.cwc"
   ],
 
   "4-59/5 * * * *": [
-    "eng.fa",             // FA Cup
-    "esp.copa_del_rey",   // Copa del Rey
+    "eng.fa",
+    "esp.copa_del_rey",
     "bra.copa_do_brazil",
-    "ksa.1"               // Saudi Pro League
+    "ksa.1"
   ]
 };
 
-// On regarde aussi les matchs terminés récemment,
-// pour ne pas rater un but marqué juste avant la fin.
+// =====================================================
+// CONFIGURATION
+// =====================================================
+
 const RECENT_MATCH_MINUTES = 180;
+const EVENT_TTL_SECONDS = 60 * 60 * 24 * 90;
 
-// Un but reste mémorisé 90 jours.
-const GOAL_TTL_SECONDS = 60 * 60 * 24 * 90;
 
+// =====================================================
+// WORKER
+// =====================================================
 
 export default {
 
-  // Vérification normale du Worker dans le navigateur.
   async fetch(request, env) {
+
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
@@ -78,7 +85,6 @@ export default {
   },
 
 
-  // Déclenché automatiquement par les Cron Triggers.
   async scheduled(controller, env) {
 
     const competitions = GROUPS[controller.cron];
@@ -93,9 +99,16 @@ export default {
     );
 
     for (const competition of competitions) {
+
       try {
-        await scanCompetition(competition, env);
+
+        await scanCompetition(
+          competition,
+          env
+        );
+
       } catch (error) {
+
         console.error(
           `Erreur ${competition}:`,
           error?.stack || error
@@ -106,20 +119,25 @@ export default {
 };
 
 
-/* =====================================================
-   SCAN D'UNE COMPÉTITION
-===================================================== */
+// =====================================================
+// SCAN COMPÉTITION
+// =====================================================
 
-async function scanCompetition(competition, env) {
+async function scanCompetition(
+  competition,
+  env
+) {
 
   const response = await fetch(
     `${ESPN_BASE}/${competition}/scoreboard`
   );
 
   if (!response.ok) {
+
     console.log(
       `ESPN ${competition}: HTTP ${response.status}`
     );
+
     return;
   }
 
@@ -136,12 +154,15 @@ async function scanCompetition(competition, env) {
     }
 
     try {
+
       await inspectMatch(
         match,
         competition,
         env
       );
+
     } catch (error) {
+
       console.error(
         `Erreur match ${competition}/${match.id}:`,
         error?.stack || error
@@ -151,21 +172,21 @@ async function scanCompetition(competition, env) {
 }
 
 
-/* =====================================================
-   DÉTERMINE SI LE MATCH EST INTÉRESSANT
-===================================================== */
+// =====================================================
+// MATCH INTÉRESSANT ?
+// =====================================================
 
 function shouldInspectMatch(match) {
 
   const state =
     match?.status?.type?.state;
 
-  // Match en direct.
+  // Match en direct
   if (state === "in") {
     return true;
   }
 
-  // Match terminé récemment.
+  // Match terminé récemment
   if (state !== "post") {
     return false;
   }
@@ -187,9 +208,9 @@ function shouldInspectMatch(match) {
 }
 
 
-/* =====================================================
-   RÉCUPÈRE LES ÉVÉNEMENTS DU MATCH
-===================================================== */
+// =====================================================
+// RÉCUPÉRATION DES ÉVÉNEMENTS
+// =====================================================
 
 async function inspectMatch(
   match,
@@ -202,37 +223,76 @@ async function inspectMatch(
   );
 
   if (!response.ok) {
+
     console.log(
       `Summary indisponible : ${competition}/${match.id}`
     );
+
     return;
   }
 
   const summary =
     await response.json();
 
-  const goals =
-    (summary.keyEvents || [])
-      .filter(event => event?.scoringPlay === true);
+  const keyEvents =
+    Array.isArray(summary.keyEvents)
+      ? summary.keyEvents
+      : [];
 
-  if (!goals.length) {
+  if (!keyEvents.length) {
     return;
   }
 
   const score =
     getCurrentScore(match);
 
+  // Évite de publier deux fois le même événement
+  // lorsqu'ESPN le représente dans plusieurs parties
+  // du résumé.
+  const processed = new Set();
+
   for (
     let index = 0;
-    index < goals.length;
+    index < keyEvents.length;
     index++
   ) {
 
-    await processGoal(
-      goals[index],
-      index,
+    const event =
+      keyEvents[index];
+
+    const eventType =
+      detectEventType(event);
+
+    if (!eventType) {
+      continue;
+    }
+
+    // Hors-jeu simple :
+    // pas de publication.
+    if (eventType === "OFFSIDE_ONLY") {
+      continue;
+    }
+
+    const eventId =
+      createEventId(
+        competition,
+        match.id,
+        event,
+        index,
+        eventType
+      );
+
+    if (processed.has(eventId)) {
+      continue;
+    }
+
+    processed.add(eventId);
+
+    await processEvent(
+      event,
+      eventType,
+      eventId,
       match,
-      competition,
       score,
       env
     );
@@ -240,65 +300,341 @@ async function inspectMatch(
 }
 
 
-/* =====================================================
-   TRAITEMENT D'UN BUT
-===================================================== */
+// =====================================================
+// DÉTECTION DES 9 ÉVÉNEMENTS GLOBALFOOT
+// =====================================================
 
-async function processGoal(
-  goal,
-  index,
+function detectEventType(event) {
+
+  const text =
+    getEventText(event);
+
+  const scoring =
+    event?.scoringPlay === true;
+
+  const penalty =
+    isPenaltyEvent(event, text);
+
+  const ownGoal =
+    isOwnGoal(event, text);
+
+  const cancelledGoal =
+    isCancelledGoal(event, text);
+
+  const yellow =
+    isYellowCard(event, text);
+
+  const red =
+    isRedCard(event, text);
+
+  const secondYellow =
+    isSecondYellow(event, text);
+
+  const penaltyMissed =
+    isMissedPenalty(event, text);
+
+  const penaltyAwarded =
+    isPenaltyAwarded(event, text);
+
+
+  // ===================================================
+  // 1. DEUXIÈME JAUNE → ROUGE
+  // ===================================================
+
+  if (secondYellow) {
+    return "SECOND_YELLOW_RED";
+  }
+
+
+  // ===================================================
+  // 2. CARTON ROUGE
+  // ===================================================
+
+  if (red) {
+    return "RED_CARD";
+  }
+
+
+  // ===================================================
+  // 3. CARTON JAUNE
+  // ===================================================
+
+  if (yellow) {
+    return "YELLOW_CARD";
+  }
+
+
+  // ===================================================
+  // 4. PENALTY RATÉ
+  // ===================================================
+
+  if (penaltyMissed) {
+    return "MISSED_PENALTY";
+  }
+
+
+  // ===================================================
+  // 5. PENALTY ACCORDÉ
+  // ===================================================
+
+  if (penaltyAwarded) {
+    return "PENALTY_AWARDED";
+  }
+
+
+  // ===================================================
+  // 6. BUT ANNULÉ
+  // ===================================================
+
+  if (cancelledGoal) {
+    return "CANCELLED_GOAL";
+  }
+
+
+  // ===================================================
+  // 7. BUT
+  // ===================================================
+
+  if (scoring) {
+
+    if (ownGoal) {
+      return "OWN_GOAL";
+    }
+
+    if (penalty) {
+      return "PENALTY_GOAL";
+    }
+
+    return "GOAL";
+  }
+
+
+  // ===================================================
+  // 8. HORS-JEU SIMPLE
+  // ===================================================
+
+  if (isOffside(event, text)) {
+    return "OFFSIDE_ONLY";
+  }
+
+
+  return null;
+}
+
+
+// =====================================================
+// TEXTE D'UN ÉVÉNEMENT
+// =====================================================
+
+function getEventText(event) {
+
+  let text = "";
+
+  try {
+    text += ` ${event?.text || ""}`;
+    text += ` ${event?.type?.text || ""}`;
+    text += ` ${event?.type?.name || ""}`;
+    text += ` ${event?.type?.id || ""}`;
+    text += ` ${event?.detail || ""}`;
+    text += ` ${event?.description || ""}`;
+    text += ` ${event?.shortText || ""}`;
+    text += ` ${JSON.stringify(event || {})}`;
+  } catch {
+    // Rien
+  }
+
+  return text.toLowerCase();
+}
+
+
+// =====================================================
+// IDENTIFICATION DES ÉVÉNEMENTS
+// =====================================================
+
+function isPenaltyEvent(event, text) {
+
+  return (
+    text.includes("penalty") ||
+    text.includes("pen.") ||
+    text.includes("penalty kick")
+  );
+}
+
+
+function isOwnGoal(event, text) {
+
+  return (
+    text.includes("own goal") ||
+    text.includes("own_goal") ||
+    text.includes("autogoal") ||
+    text.includes("autogol")
+  );
+}
+
+
+function isCancelledGoal(event, text) {
+
+  return (
+    text.includes("goal disallowed") ||
+    text.includes("goal cancelled") ||
+    text.includes("goal canceled") ||
+    text.includes("goal overturned") ||
+    text.includes("goal nullified") ||
+    text.includes("but annul") ||
+    text.includes("but refus") ||
+    text.includes("annulé")
+  );
+}
+
+
+function isOffside(event, text) {
+
+  return (
+    text.includes("offside") ||
+    text.includes("hors-jeu")
+  );
+}
+
+
+function isYellowCard(event, text) {
+
+  if (
+    text.includes("second yellow") ||
+    text.includes("second booking") ||
+    text.includes("second caution")
+  ) {
+    return false;
+  }
+
+  return (
+    text.includes("yellow card") ||
+    text.includes("yellow") ||
+    text.includes("caution")
+  );
+}
+
+
+function isRedCard(event, text) {
+
+  return (
+    text.includes("red card") ||
+    text.includes("red-card") ||
+    text.includes("straight red") ||
+    text.includes("sent off") ||
+    text.includes("ejected")
+  );
+}
+
+
+function isSecondYellow(event, text) {
+
+  return (
+    text.includes("second yellow") ||
+    text.includes("second booking") ||
+    text.includes("second caution") ||
+    text.includes("2nd yellow") ||
+    text.includes("yellow-red")
+  );
+}
+
+
+function isMissedPenalty(event, text) {
+
+  if (!isPenaltyEvent(event, text)) {
+    return false;
+  }
+
+  return (
+    text.includes("missed") ||
+    text.includes("miss") ||
+    text.includes("saved") ||
+    text.includes("save") ||
+    text.includes("penalty miss") ||
+    text.includes("penalty saved") ||
+    text.includes("penalty not scored") ||
+    text.includes("off target") ||
+    text.includes("wide")
+  );
+}
+
+
+function isPenaltyAwarded(event, text) {
+
+  if (!isPenaltyEvent(event, text)) {
+    return false;
+  }
+
+  if (event?.scoringPlay === true) {
+    return false;
+  }
+
+  if (isMissedPenalty(event, text)) {
+    return false;
+  }
+
+  return (
+    text.includes("penalty awarded") ||
+    text.includes("penalty given") ||
+    text.includes("penalty won") ||
+    text.includes("penalty") &&
+    (
+      text.includes("awarded") ||
+      text.includes("given") ||
+      text.includes("decision")
+    )
+  );
+}
+
+
+// =====================================================
+// TRAITEMENT D'UN ÉVÉNEMENT
+// =====================================================
+
+async function processEvent(
+  event,
+  eventType,
+  eventId,
   match,
-  competition,
   score,
   env
 ) {
 
-  const goalId =
-    createGoalId(
-      competition,
-      match.id,
-      goal,
-      index
-    );
-
-  // Déjà publié ?
   const alreadyPosted =
-    await env.GLOBALFOOT_KV.get(goalId);
+    await env.GLOBALFOOT_KV.get(eventId);
 
   if (alreadyPosted) {
     return;
   }
 
-  const scorer =
-    getScorerName(goal);
+  const player =
+    getEventPlayer(event);
 
   const minute =
-    getGoalMinute(goal);
-
-  const modifier =
-    getGoalModifier(goal);
+    getEventMinute(event);
 
   const message =
-    formatFacebookMessage(
-      score,
-      scorer,
+    formatGlobalFootMessage(
+      eventType,
+      player,
       minute,
-      modifier
+      score,
+      event
     );
 
+  if (!message) {
+    return;
+  }
+
   console.log(
-    `⚽ Nouveau but : ${message}`
+    `🌍 GlobalFoot ${eventType}: ${message}`
   );
 
-  // Publication Facebook.
   const result =
     await publishToFacebook(
       message,
       env.FACEBOOK_PAGE_TOKEN
     );
 
-  // IMPORTANT :
-  // si Facebook refuse, on ne mémorise PAS le but.
   if (!result.ok) {
 
     console.error(
@@ -309,86 +645,100 @@ async function processGoal(
     return;
   }
 
-  // Facebook a confirmé la publication.
-  // Maintenant seulement, on mémorise le but.
   await env.GLOBALFOOT_KV.put(
-    goalId,
+    eventId,
     "1",
     {
-      expirationTtl: GOAL_TTL_SECONDS
+      expirationTtl: EVENT_TTL_SECONDS
     }
   );
 
   console.log(
-    `✅ But publié : ${goalId}`
+    `✅ Événement publié : ${eventId}`
   );
 }
 
 
-/* =====================================================
-   ID UNIQUE DU BUT
-===================================================== */
+// =====================================================
+// ID UNIQUE D'ÉVÉNEMENT
+// =====================================================
 
-function createGoalId(
+function createEventId(
   competition,
   matchId,
-  goal,
-  index
+  event,
+  index,
+  eventType
 ) {
 
   const eventId =
-    goal?.id ??
-    goal?.sequenceNumber ??
-    goal?.clock?.value ??
-    goal?.clock?.displayValue ??
-    `goal-${index}`;
+    event?.id ??
+    event?.sequenceNumber ??
+    event?.clock?.value ??
+    event?.clock?.displayValue ??
+    event?.type?.id ??
+    `${eventType}-${index}`;
 
   return (
-    `goal:${competition}:${matchId}:${eventId}`
+    `event:${competition}:${matchId}:${eventType}:${eventId}`
   );
 }
 
 
-/* =====================================================
-   NOM DU BUTEUR
-===================================================== */
+// =====================================================
+// JOUEUR / ACTEUR
+// =====================================================
 
-function getScorerName(goal) {
+function getEventPlayer(event) {
 
-  if (goal?.athlete?.displayName) {
-    return goal.athlete.displayName;
+  if (event?.athlete?.displayName) {
+    return event.athlete.displayName;
   }
 
-  for (const participant of goal?.participants || []) {
+  if (event?.player?.displayName) {
+    return event.player.displayName;
+  }
 
-    if (participant?.athlete?.displayName) {
+  for (
+    const participant of event?.participants || []
+  ) {
+
+    if (
+      participant?.athlete?.displayName
+    ) {
       return participant.athlete.displayName;
+    }
+
+    if (
+      participant?.player?.displayName
+    ) {
+      return participant.player.displayName;
     }
   }
 
-  return "Buteur";
+  return "Joueur";
 }
 
 
-/* =====================================================
-   MINUTE DU BUT
-===================================================== */
+// =====================================================
+// MINUTE
+// =====================================================
 
-function getGoalMinute(goal) {
+function getEventMinute(event) {
 
-  if (goal?.clock?.displayValue) {
-    return goal.clock.displayValue
+  if (event?.clock?.displayValue) {
+    return event.clock.displayValue
       .replace(/\s+/g, "");
   }
 
-  if (goal?.minute != null) {
-    return `${goal.minute}'`;
+  if (event?.minute != null) {
+    return `${event.minute}'`;
   }
 
-  if (goal?.clock?.value != null) {
+  if (event?.clock?.value != null) {
 
     const seconds =
-      Number(goal.clock.value);
+      Number(event.clock.value);
 
     if (Number.isFinite(seconds)) {
       return `${Math.floor(seconds / 60)}'`;
@@ -399,38 +749,9 @@ function getGoalMinute(goal) {
 }
 
 
-/* =====================================================
-   PENALTY / BUT CONTRE SON CAMP
-===================================================== */
-
-function getGoalModifier(goal) {
-
-  const text =
-    `${goal?.text || ""} ${JSON.stringify(goal || {})}`
-      .toLowerCase();
-
-  if (
-    text.includes("penalty") ||
-    text.includes("pen.")
-  ) {
-    return "pen.";
-  }
-
-  if (
-    text.includes("own goal") ||
-    text.includes("autogoal") ||
-    text.includes("own_goal")
-  ) {
-    return "o.g.";
-  }
-
-  return "";
-}
-
-
-/* =====================================================
-   SCORE ACTUEL
-===================================================== */
+// =====================================================
+// SCORE
+// =====================================================
 
 function getCurrentScore(match) {
 
@@ -450,6 +771,7 @@ function getCurrentScore(match) {
   for (const team of teams) {
 
     const data = {
+
       name:
         team?.team?.shortDisplayName ||
         team?.team?.displayName ||
@@ -476,40 +798,220 @@ function getCurrentScore(match) {
 }
 
 
-/* =====================================================
-   MESSAGE FACEBOOK
-===================================================== */
+// =====================================================
+// NOM DU MATCH
+// =====================================================
 
-function formatFacebookMessage(
-  score,
-  scorer,
-  minute,
-  modifier
-) {
+function getMatchLine(score) {
 
-  const live =
-    `🚩 Live: ${score.home.name} ${score.home.score}-${score.away.score} ${score.away.name}`;
-
-  const goal =
-    modifier
-      ? `⚽️ Goal: ${scorer} (${modifier}) (${minute})`
-      : `⚽️ Goal: ${scorer} (${minute})`;
-
-  return `${live}
-
-${goal}
-
-🔥 Tu l’as vu ?
-👍 Réagis • 💬 Commente • 🔄 Partage
-➕ Suis GlobalFoot pour ne manquer aucun but !
-
-🌍 GlobalFoot`;
+  return (
+    `📍 ${score.home.name} ${score.home.score}-${score.away.score} ${score.away.name}`
+  );
 }
 
 
-/* =====================================================
-   PUBLICATION FACEBOOK
-===================================================== */
+// =====================================================
+// FORMAT GLOBALFOOT
+// =====================================================
+
+function formatGlobalFootMessage(
+  eventType,
+  player,
+  minute,
+  score,
+  event
+) {
+
+  const matchLine =
+    getMatchLine(score);
+
+
+  // ================================================
+  // BUT
+  // ================================================
+
+  if (eventType === "GOAL") {
+
+    return `⚡ BUT !
+
+⚽️ ${player} frappe et ça fait ${score.home.score}-${score.away.score} !
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // BUT CONTRE SON CAMP
+  // ================================================
+
+  if (eventType === "OWN_GOAL") {
+
+    return `⚡ BUT !
+
+⚽️ But contre son camp de ${player} !
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // PENALTY MARQUÉ
+  // ================================================
+
+  if (eventType === "PENALTY_GOAL") {
+
+    return `🎯 PENALTY !
+
+⚽️ ${player} transforme le penalty !
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // PENALTY RATÉ
+  // ================================================
+
+  if (eventType === "MISSED_PENALTY") {
+
+    return `❌ PENALTY RATÉ !
+
+🎯 ${player} manque sa tentative.
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // PENALTY ACCORDÉ
+  // ================================================
+
+  if (eventType === "PENALTY_AWARDED") {
+
+    return `🎯 PENALTY !
+
+🚨 Penalty accordé.
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // BUT ANNULÉ
+  // ================================================
+
+  if (eventType === "CANCELLED_GOAL") {
+
+    const text =
+      getEventText(event);
+
+    let reason =
+      "Le but est refusé.";
+
+    if (
+      text.includes("offside") ||
+      text.includes("hors-jeu")
+    ) {
+      reason =
+        "Le but est annulé pour hors-jeu.";
+    } else if (
+      text.includes("foul") ||
+      text.includes("faute")
+    ) {
+      reason =
+        "Le but est annulé pour faute.";
+    } else if (
+      text.includes("var") ||
+      text.includes("overturned")
+    ) {
+      reason =
+        "Le but est annulé après vérification.";
+    }
+
+    return `🚫 BUT ANNULÉ !
+
+⚽️ ${reason}
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // CARTON JAUNE
+  // ================================================
+
+  if (eventType === "YELLOW_CARD") {
+
+    return `🟨 CARTON !
+
+👤 ${player} est averti.
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // CARTON ROUGE
+  // ================================================
+
+  if (eventType === "RED_CARD") {
+
+    return `🟥 CARTON ROUGE !
+
+🚨 ${player} est expulsé !
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  // ================================================
+  // DEUXIÈME JAUNE → ROUGE
+  // ================================================
+
+  if (eventType === "SECOND_YELLOW_RED") {
+
+    return `🟨🟥 EXPULSION !
+
+🚨 ${player} reçoit un deuxième jaune et est expulsé !
+⏱️ ${minute}
+
+${matchLine}
+
+🌍 GlobalFoot`;
+  }
+
+
+  return null;
+}
+
+
+// =====================================================
+// FACEBOOK
+// =====================================================
 
 async function publishToFacebook(
   message,
@@ -551,9 +1053,12 @@ async function publishToFacebook(
   let data;
 
   try {
+
     data =
       await response.json();
+
   } catch {
+
     data = {
       error:
         "Réponse Facebook non JSON"
@@ -561,6 +1066,7 @@ async function publishToFacebook(
   }
 
   return {
+
     ok:
       response.ok &&
       !data?.error &&
