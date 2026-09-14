@@ -1,0 +1,18 @@
+{
+  "name": "fancy-heart-0b64",
+  "triggers": {
+    "crons": [
+      "0-59/5 * * * *",
+      "1-59/5 * * * *",
+      "2-59/5 * * * *",
+      "3-59/5 * * * *",
+      "4-59/5 * * * *"
+    ]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "GLOBALFOOT_KV",
+      "id": "5f0d3b4223f44cf99e1abc9fa90dda59"
+    }
+  ]
+}
