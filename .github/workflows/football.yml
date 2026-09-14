@@ -1,10 +1,9 @@
-
 name: GlobalFoot Auto Post
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2-59/5 * * * *"
 
 jobs:
   globalfoot:
@@ -19,60 +18,35 @@ jobs:
           FACEBOOK_PAGE_TOKEN: ${{ secrets.FACEBOOK_PAGE_TOKEN }}
         run: |
           python - <<'PY'
-          import requests
-          import json
           import os
+          import json
+          import requests
 
           STATE_FILE = "seen_goals.json"
           PAGE_ID = "987662881093953"
 
-          if os.path.exists(STATE_FILE):
+          ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+
+          try:
               with open(STATE_FILE, "r") as f:
                   seen_goals = set(json.load(f))
-          else:
+          except FileNotFoundError:
               seen_goals = set()
-
-          scoreboard_url = (
-              "https://site.api.espn.com/apis/site/v2/"
-              "sports/soccer/eng.1/scoreboard"
-          )
-
-          session = requests.Session()
-
-          response = session.get(
-              scoreboard_url,
-              timeout=20
-          )
-          response.raise_for_status()
-
-          data = response.json()
 
           updated_seen = set(seen_goals)
           new_count = 0
 
+          data = requests.get(ESPN_URL).json()
+
           for match in data.get("events", []):
-
               event_id = match.get("id")
-              match_name = match.get(
-                  "name",
-                  "Match inconnu"
-              )
+              match_name = match.get("name", "")
 
-              summary_url = (
-                  "https://site.api.espn.com/apis/site/v2/"
-                  f"sports/soccer/eng.1/summary?event={event_id}"
-              )
+              summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/summary?event={event_id}"
 
               try:
-                  r = session.get(
-                      summary_url,
-                      timeout=20
-                  )
-                  r.raise_for_status()
-                  summary = r.json()
-
-              except requests.exceptions.RequestException as error:
-                  print("⚠️ Match ignoré :", error)
+                  summary = requests.get(summary_url).json()
+              except Exception:
                   continue
 
               for event in summary.get("keyEvents", []):
@@ -85,101 +59,60 @@ jobs:
                   if goal_id in seen_goals:
                       continue
 
-                  minute = event.get(
-                      "clock", {}
-                  ).get(
-                      "displayValue",
-                      "?"
-                  )
+                  minute = event.get("clock", {}).get("displayValue", "")
+                  team = event.get("team", {}).get("displayName", "")
 
-                  team = event.get(
-                      "team", {}
-                  ).get(
-                      "displayName",
-                      "Équipe inconnue"
-                  )
+                  participants = event.get("participants", [])
 
-                  player = "Joueur inconnu"
-
-                  participants = event.get(
-                      "participants",
-                      []
-                  )
+                  player = "Buteur inconnu"
 
                   if participants:
-                      player = participants[0].get(
-                          "athlete",
-                          {}
-                      ).get(
-                          "displayName",
-                          "Joueur inconnu"
-                      )
+                      athlete = participants[0].get("athlete", {})
+                      player = athlete.get("displayName", "Buteur inconnu")
 
-                  message = (
-                      f"⚽ BUT EN DIRECT !\n\n"
-                      f"🏆 {match_name}\n"
-                      f"⚽ {team}\n"
-                      f"👤 {player}\n"
-                      f"⏱️ {minute}\n\n"
-                      f"🌍 GlobalFoot"
-                  )
+                  message = f"""⚽ BUT EN DIRECT !
 
-                  print("\n🆕 NOUVEAU BUT")
+🏟️ {match_name}
+👕 {team}
+⚽ {player}
+⏱️ {minute}
+
+🌍 GlobalFoot"""
+
+                  print("🔥 NOUVEAU BUT")
                   print(message)
 
-                  facebook_url = (
-                      f"https://graph.facebook.com/v26.0/"
-                      f"{PAGE_ID}/feed"
-                  )
-
                   try:
-                      fb_response = session.post(
-                          facebook_url,
+                      response = requests.post(
+                          f"https://graph.facebook.com/v26.0/{PAGE_ID}/feed",
                           data={
                               "message": message,
-                              "access_token": os.environ[
-                                  "FACEBOOK_PAGE_TOKEN"
-                              ]
-                          },
-                          timeout=20
+                              "access_token": os.environ["FACEBOOK_PAGE_TOKEN"]
+                          }
                       )
 
-                      fb_response.raise_for_status()
+                      if response.ok:
+                          print("Publication Facebook réussie")
+                          updated_seen.add(goal_id)
+                          new_count += 1
+                      else:
+                          print("Publication Facebook échouée")
+                          print(response.text)
 
-                      fb_data = fb_response.json()
-
-                      print(
-                          "✅ Publication Facebook réussie :",
-                          fb_data
-                      )
-
-                      updated_seen.add(goal_id)
-                      new_count += 1
-
-                  except requests.exceptions.RequestException as error:
-                      print(
-                          "❌ Publication Facebook échouée :",
-                          error
-                      )
-                      continue
+                  except Exception as e:
+                      print("Erreur Facebook :", e)
 
           with open(STATE_FILE, "w") as f:
-              json.dump(
-                  sorted(updated_seen),
-                  f,
-                  indent=2
-              )
+              json.dump(sorted(updated_seen), f, indent=2)
 
-          print("\n==============================")
-          print("Nouvelles publications :", new_count)
-          print("Mémoire totale :", len(updated_seen))
+          print(f"Nouvelles publications : {new_count}")
+          print(f"Mémoire totale : {len(updated_seen)}")
           PY
 
       - name: Save goal memory
         run: |
           git config user.name "GlobalFoot Bot"
           git config user.email "actions@github.com"
-
           git add seen_goals.json
 
           if git diff --cached --quiet; then
