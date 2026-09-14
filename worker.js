@@ -87,6 +87,7 @@ export default {
 
   async scheduled(controller, env) {
 
+    console.log("🔥 GLOBALFOOT CRON EXÉCUTÉ :", controller.cron);
     const competitions = GROUPS[controller.cron];
 
     if (!competitions) {
