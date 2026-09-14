@@ -50,7 +50,6 @@ jobs:
                   continue
 
               for event in summary.get("keyEvents", []):
-
                   if event.get("scoringPlay") is not True:
                       continue
 
@@ -70,14 +69,14 @@ jobs:
                       athlete = participants[0].get("athlete", {})
                       player = athlete.get("displayName", "Buteur inconnu")
 
-                  message = f"""⚽ BUT EN DIRECT !
-
-🏟️ {match_name}
-👕 {team}
-⚽ {player}
-⏱️ {minute}
-
-🌍 GlobalFoot"""
+                  message = (
+                      "⚽ BUT EN DIRECT !\n\n"
+                      f"🏟️ {match_name}\n"
+                      f"👕 {team}\n"
+                      f"⚽ {player}\n"
+                      f"⏱️ {minute}\n\n"
+                      "🌍 GlobalFoot"
+                  )
 
                   print("🔥 NOUVEAU BUT")
                   print(message)
