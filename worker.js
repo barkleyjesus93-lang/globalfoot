@@ -293,6 +293,15 @@ async function inspectMatch(
     `🔎 Inspection match ${competition}: ${gameId}`
   );
 
+  // ====================================================
+  // DIAGNOSTIC TEMPORAIRE
+  // ====================================================
+
+  console.log(
+    `🧪 STRUCTURE MATCH ${competition}/${gameId}:`,
+    JSON.stringify(match).slice(0, 5000)
+  );
+
   // Aucun appel Game CDN.
   // On utilise directement les événements
   // présents dans le scoreboard.
