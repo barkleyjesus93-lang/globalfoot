@@ -234,12 +234,23 @@ async function inspectLiveGame(
     return;
   }
 
+  console.log(
+    `📚 ${refs.length} références reçues`
+  );
+
+  /*
+    On récupère les dernières références,
+    puis on récupère les vraies actions ESPN.
+  */
+
   const recentRefs =
-    refs.slice(-10);
+    refs.slice(-30);
 
   console.log(
-    `🔬 Analyse des ${recentRefs.length} dernières actions`
+    `🔬 Analyse de ${recentRefs.length} dernières références`
   );
+
+  const plays = [];
 
   for (let i = 0; i < recentRefs.length; i++) {
 
@@ -252,51 +263,92 @@ async function inspectLiveGame(
       continue;
     }
 
+    plays.push(play);
+  }
+
+  console.log(
+    `✅ ${plays.length} vraies actions récupérées`
+  );
+
+  /*
+    IMPORTANT :
+    ESPN peut renvoyer les références
+    dans un ordre inattendu.
+
+    On trie donc les actions par temps
+    de jeu avant de chercher un but.
+  */
+
+  plays.sort(
+    (a, b) =>
+      (a.clock?.value || 0) -
+      (b.clock?.value || 0)
+  );
+
+  console.log("");
+  console.log("==============================================");
+  console.log("📋 ACTIONS TRIÉES");
+  console.log("==============================================");
+
+  for (const play of plays) {
+
+    console.log(
+      `⏱️ ${play.clock?.displayValue || "?"} | ` +
+      `${play.text || "Action"} | ` +
+      `scoringPlay=${play.scoringPlay}`
+    );
+  }
+
+  /*
+    RECHERCHE DES BUTS
+  */
+
+  const goals =
+    plays.filter(
+      play => play.scoringPlay === true
+    );
+
+  if (!goals.length) {
+
     console.log("");
-    console.log(
-      `🎬 PLAY ${i + 1}/${recentRefs.length}`
-    );
+    console.log("⚪ Aucun but détecté dans ces actions.");
 
-    console.log(
-      JSON.stringify(play).slice(0, 5000)
-    );
+  } else {
 
-    // ==========================================
-    // DÉTECTION D'UN BUT
-    // ==========================================
+    console.log("");
+    console.log("==============================================");
+    console.log("⚽⚽⚽ BUT(S) DÉTECTÉ(S) ⚽⚽⚽");
+    console.log("==============================================");
 
-    if (play.scoringPlay === true) {
-
-      console.log("");
-      console.log("==============================================");
-      console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
-      console.log("==============================================");
+    for (const goal of goals) {
 
       console.log(
-        `🆔 Play ID : ${play.id}`
+        `🆔 Play ID : ${goal.id}`
       );
 
       console.log(
-        `📝 Action : ${play.text || "N/A"}`
+        `📝 Action : ${goal.text || "N/A"}`
       );
 
       console.log(
-        `🏠 Score domicile : ${play.homeScore}`
+        `⏱️ Minute : ${goal.clock?.displayValue || "N/A"}`
       );
 
       console.log(
-        `✈️ Score extérieur : ${play.awayScore}`
+        `🏠 Score domicile : ${goal.homeScore}`
       );
 
       console.log(
-        `⏱️ Minute : ${play.clock?.displayValue || "N/A"}`
+        `✈️ Score extérieur : ${goal.awayScore}`
       );
 
       console.log(
-        `⚽ Score value : ${play.scoreValue || 0}`
+        `⚽ Score value : ${goal.scoreValue || 0}`
       );
 
-      console.log("==============================================");
+      console.log(
+        "=============================================="
+      );
     }
   }
 
