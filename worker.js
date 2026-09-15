@@ -89,40 +89,6 @@ async function fetchESPN(url) {
 }
 
 // ======================================================
-// EXTRAIRE LE GAMEPACKAGE
-// ======================================================
-
-function getGamePackage(data) {
-  if (!data || typeof data !== "object") {
-    return null;
-  }
-
-  if (
-    data.gamepackageJSON &&
-    typeof data.gamepackageJSON === "object"
-  ) {
-    return data.gamepackageJSON;
-  }
-
-  if (
-    data.content &&
-    typeof data.content === "object" &&
-    data.content.gamepackageJSON
-  ) {
-    return data.content.gamepackageJSON;
-  }
-
-  if (
-    data.content &&
-    typeof data.content === "object"
-  ) {
-    return data.content;
-  }
-
-  return data;
-}
-
-// ======================================================
 // SCOREBOARD
 // ======================================================
 
@@ -155,9 +121,7 @@ function extractScoreboardEvents(data) {
       typeof data.content.sbData === "object"
     ) {
       if (
-        Array.isArray(
-          data.content.sbData.events
-        )
+        Array.isArray(data.content.sbData.events)
       ) {
         return data.content.sbData.events;
       }
@@ -177,6 +141,96 @@ function extractScoreboardEvents(data) {
 }
 
 // ======================================================
+// EXTRAIRE LES ÉVÉNEMENTS DIRECTEMENT DU SCOREBOARD
+// ======================================================
+
+function extractMatchEvents(match) {
+  if (!match || typeof match !== "object") {
+    return [];
+  }
+
+  const results = [];
+
+  // ----------------------------------------------------
+  // 1. Détails de la compétition
+  // ----------------------------------------------------
+
+  const competitions =
+    Array.isArray(match.competitions)
+      ? match.competitions
+      : [];
+
+  for (const competition of competitions) {
+    if (
+      Array.isArray(competition.details)
+    ) {
+      results.push(
+        ...competition.details
+      );
+    }
+
+    if (
+      Array.isArray(competition.keyEvents)
+    ) {
+      results.push(
+        ...competition.keyEvents
+      );
+    }
+
+    if (
+      Array.isArray(competition.plays)
+    ) {
+      results.push(
+        ...competition.plays
+      );
+    }
+  }
+
+  // ----------------------------------------------------
+  // 2. Événements directement sur le match
+  // ----------------------------------------------------
+
+  if (Array.isArray(match.details)) {
+    results.push(...match.details);
+  }
+
+  if (Array.isArray(match.keyEvents)) {
+    results.push(...match.keyEvents);
+  }
+
+  if (Array.isArray(match.plays)) {
+    results.push(...match.plays);
+  }
+
+  // ----------------------------------------------------
+  // 3. Supprimer les doublons
+  // ----------------------------------------------------
+
+  const seen = new Set();
+
+  return results.filter(event => {
+    if (!event || typeof event !== "object") {
+      return false;
+    }
+
+    const id =
+      event.id ||
+      event.sequenceNumber ||
+      event.clock?.value ||
+      event.clock?.displayValue ||
+      event.text ||
+      JSON.stringify(event);
+
+    if (seen.has(id)) {
+      return false;
+    }
+
+    seen.add(id);
+    return true;
+  });
+}
+
+// ======================================================
 // SCAN COMPÉTITION
 // ======================================================
 
@@ -191,21 +245,21 @@ async function scanCompetition(
     const data =
       await fetchESPN(url);
 
-    const events =
+    const matches =
       extractScoreboardEvents(data);
 
     console.log(
-      `⚽ ESPN CDN ${competition}: ${events.length} match(s)`
+      `⚽ ESPN CDN ${competition}: ${matches.length} match(s)`
     );
 
-    if (!events.length) {
-      console.error(
-        `❌ ESPN CDN ${competition}: aucun match`
+    if (!matches.length) {
+      console.log(
+        `ℹ️ Aucun match ${competition}`
       );
       return;
     }
 
-    for (const match of events) {
+    for (const match of matches) {
       if (!match?.id) {
         continue;
       }
@@ -225,7 +279,7 @@ async function scanCompetition(
 }
 
 // ======================================================
-// INSPECT MATCH — CDN GAME
+// INSPECTION DU MATCH
 // ======================================================
 
 async function inspectMatch(
@@ -236,160 +290,32 @@ async function inspectMatch(
   const gameId = match.id;
 
   console.log(
-    `🔎 Inspection CDN match ${competition}: ${gameId}`
+    `🔎 Inspection match ${competition}: ${gameId}`
   );
 
-  const gameUrl =
-    `https://cdn.espn.com/core/soccer/game?xhr=1&gameId=${encodeURIComponent(gameId)}`;
+  // Aucun appel Game CDN.
+  // On utilise directement les événements
+  // présents dans le scoreboard.
 
-  try {
-    const data =
-      await fetchESPN(gameUrl);
+  const events =
+    extractMatchEvents(match);
 
-    const pkg =
-      getGamePackage(data);
+  console.log(
+    `🎯 Événements trouvés ${competition}/${gameId}: ${events.length}`
+  );
 
-    if (!pkg) {
-      console.error(
-        `❌ Package CDN absent ${competition}/${gameId}`
-      );
-      return;
-    }
+  if (!events.length) {
+    return;
+  }
 
-    console.log(
-      `📦 Game package reçu ${competition}/${gameId}`
-    );
-
-    // On cherche plusieurs emplacements possibles.
-    const events =
-      extractGameEvents(pkg);
-
-    console.log(
-      `🎯 Événements CDN ${competition}/${gameId}: ${events.length}`
-    );
-
-    if (events.length) {
-      for (const event of events) {
-        await processEvent(
-          competition,
-          match,
-          event,
-          env
-        );
-      }
-
-      return;
-    }
-
-    // Si le package game ne contient pas directement
-    // les événements, on tente playbyplay.
-    await inspectPlayByPlay(
+  for (const event of events) {
+    await processEvent(
       competition,
       match,
+      event,
       env
     );
-  } catch (error) {
-    console.error(
-      `❌ Game CDN ${competition}/${gameId}:`,
-      error?.message || String(error)
-    );
   }
-}
-
-// ======================================================
-// PLAY-BY-PLAY CDN
-// ======================================================
-
-async function inspectPlayByPlay(
-  competition,
-  match,
-  env
-) {
-  const gameId = match.id;
-
-  const url =
-    `https://cdn.espn.com/core/soccer/playbyplay?xhr=1&gameId=${encodeURIComponent(gameId)}`;
-
-  try {
-    const data =
-      await fetchESPN(url);
-
-    const pkg =
-      getGamePackage(data);
-
-    const plays =
-      extractGameEvents(pkg);
-
-    console.log(
-      `🎬 PlayByPlay ${competition}/${gameId}: ${plays.length} événement(s)`
-    );
-
-    for (const event of plays) {
-      await processEvent(
-        competition,
-        match,
-        event,
-        env
-      );
-    }
-  } catch (error) {
-    console.error(
-      `❌ PlayByPlay ${competition}/${gameId}:`,
-      error?.message || String(error)
-    );
-  }
-}
-
-// ======================================================
-// EXTRACTION DES ÉVÉNEMENTS
-// ======================================================
-
-function extractGameEvents(pkg) {
-  if (!pkg || typeof pkg !== "object") {
-    return [];
-  }
-
-  if (Array.isArray(pkg.keyEvents)) {
-    return pkg.keyEvents;
-  }
-
-  if (Array.isArray(pkg.plays)) {
-    return pkg.plays;
-  }
-
-  if (Array.isArray(pkg.events)) {
-    return pkg.events;
-  }
-
-  if (
-    pkg.game &&
-    Array.isArray(pkg.game.plays)
-  ) {
-    return pkg.game.plays;
-  }
-
-  if (
-    pkg.game &&
-    Array.isArray(pkg.game.keyEvents)
-  ) {
-    return pkg.game.keyEvents;
-  }
-
-  if (
-    pkg.content &&
-    Array.isArray(pkg.content.plays)
-  ) {
-    return pkg.content.plays;
-  }
-
-  if (
-    pkg.content &&
-    Array.isArray(pkg.content.keyEvents)
-  ) {
-    return pkg.content.keyEvents;
-  }
-
-  return [];
 }
 
 // ======================================================
@@ -408,7 +334,8 @@ function getEventType(event) {
     event.type,
     event.text,
     event.description,
-    event.shortText
+    event.shortText,
+    event.label
   ]
     .filter(Boolean)
     .join(" ")
@@ -418,12 +345,21 @@ function getEventType(event) {
     return null;
   }
 
+  // ----------------------------------------------------
+  // BUT CONTRE SON CAMP
+  // ----------------------------------------------------
+
   if (
     text.includes("OWN GOAL") ||
-    text.includes("OWN_GOAL")
+    text.includes("OWN_GOAL") ||
+    text.includes("AUTOGOAL")
   ) {
     return "OWN_GOAL";
   }
+
+  // ----------------------------------------------------
+  // PENALTY RATÉ
+  // ----------------------------------------------------
 
   if (
     text.includes("PENALTY") &&
@@ -435,48 +371,24 @@ function getEventType(event) {
     return "MISSED_PENALTY";
   }
 
+  // ----------------------------------------------------
+  // PENALTY MARQUÉ
+  // ----------------------------------------------------
+
   if (
     text.includes("PENALTY") &&
     (
       text.includes("GOAL") ||
-      text.includes("SCORED")
+      text.includes("SCORED") ||
+      text.includes("CONVERTED")
     )
   ) {
     return "PENALTY_GOAL";
   }
 
-  if (
-    text.includes("PENALTY") &&
-    (
-      text.includes("AWARDED") ||
-      text.includes("AWARD")
-    )
-  ) {
-    return "PENALTY_AWARDED";
-  }
-
-  if (
-    text.includes("CANCEL") &&
-    text.includes("GOAL")
-  ) {
-    return "CANCELLED_GOAL";
-  }
-
-  if (
-    text.includes("SECOND") &&
-    text.includes("YELLOW") &&
-    text.includes("RED")
-  ) {
-    return "SECOND_YELLOW_RED";
-  }
-
-  if (text.includes("RED CARD")) {
-    return "RED_CARD";
-  }
-
-  if (text.includes("YELLOW CARD")) {
-    return "YELLOW_CARD";
-  }
+  // ----------------------------------------------------
+  // BUT
+  // ----------------------------------------------------
 
   if (
     text.includes("GOAL") ||
@@ -512,7 +424,7 @@ function buildEventId(
 }
 
 // ======================================================
-// TRAITEMENT
+// TRAITEMENT DU BUT
 // ======================================================
 
 async function processEvent(
@@ -524,7 +436,13 @@ async function processEvent(
   const eventType =
     getEventType(event);
 
-  if (!eventType) {
+  // GlobalFoot est actuellement configuré
+  // pour publier uniquement les buts.
+  if (
+    eventType !== "GOAL" &&
+    eventType !== "OWN_GOAL" &&
+    eventType !== "PENALTY_GOAL"
+  ) {
     return;
   }
 
@@ -558,11 +476,14 @@ async function processEvent(
     message
   );
 
+  // On publie d'abord.
   await publishToFacebook(
     message,
     env
   );
 
+  // On enregistre seulement si Facebook
+  // a accepté la publication.
   await env.GLOBALFOOT_KV.put(
     eventId,
     "1",
@@ -573,7 +494,7 @@ async function processEvent(
   );
 
   console.log(
-    `✅ Événement enregistré : ${eventId}`
+    `✅ But enregistré : ${eventId}`
   );
 }
 
@@ -615,6 +536,7 @@ function formatFacebookMessage(
     event?.athletesInvolved?.[0]?.displayName ||
     event?.athlete?.displayName ||
     event?.participants?.[0]?.athlete?.displayName ||
+    event?.athletesInvolved?.[0]?.fullName ||
     "";
 
   const minute =
@@ -631,50 +553,28 @@ function formatFacebookMessage(
   let title;
 
   switch (eventType) {
-    case "GOAL":
-      title = "⚽ BUT !";
-      break;
-
     case "OWN_GOAL":
-      title = "😱 BUT CONTRE SON CAMP !";
+      title =
+        "😱 BUT CONTRE SON CAMP !";
       break;
 
     case "PENALTY_GOAL":
-      title = "⚽ PENALTY TRANSFORMÉ !";
-      break;
-
-    case "MISSED_PENALTY":
-      title = "❌ PENALTY RATÉ !";
-      break;
-
-    case "PENALTY_AWARDED":
-      title = "🟨 PENALTY !";
-      break;
-
-    case "CANCELLED_GOAL":
-      title = "🚫 BUT ANNULÉ !";
-      break;
-
-    case "YELLOW_CARD":
-      title = "🟨 CARTON JAUNE !";
-      break;
-
-    case "RED_CARD":
-      title = "🟥 CARTON ROUGE !";
-      break;
-
-    case "SECOND_YELLOW_RED":
-      title = "🟥 EXPULSION !";
+      title =
+        "⚽ PENALTY TRANSFORMÉ !";
       break;
 
     default:
-      title = "⚽ ACTION !";
+      title =
+        "⚽ BUT !";
   }
+
+  const score =
+    `${home?.score ?? ""} - ${away?.score ?? ""}`;
 
   return `${title}
 
 🏆 ${competition}
-${homeTeam} ${home?.score ?? ""} - ${away?.score ?? ""} ${awayTeam}
+${homeTeam} ${score} ${awayTeam}
 ${athlete ? `👤 ${athlete}` : ""}
 ${minute ? `⏱️ ${minute}` : ""}
 ${description ? `\n${description}` : ""}
