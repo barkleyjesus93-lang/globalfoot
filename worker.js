@@ -17,10 +17,11 @@ const ESPN_CORE =
 
 
 // ============================================================
-// FETCH
+// FETCH ESPN
 // ============================================================
 
 async function fetchESPN(url) {
+
   const response = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0",
@@ -48,10 +49,11 @@ async function fetchESPN(url) {
 
 
 // ============================================================
-// EXTRACTION SCOREBOARD
+// SCOREBOARD
 // ============================================================
 
 function extractScoreboardData(data) {
+
   if (data?.content?.sbData) {
     console.log("🎯 ESPN CONTENT sbData TROUVÉ");
     return data.content.sbData;
@@ -75,43 +77,40 @@ function extractScoreboardData(data) {
 
 
 // ============================================================
-// PLAY-BY-PLAY ESPN CORE
+// RÉCUPÉRER LES RÉFÉRENCES PLAY-BY-PLAY
 // ============================================================
 
-async function fetchPlayByPlay(competition, gameId) {
+async function getPlayRefs(competition, gameId) {
+
   const url =
-    `${ESPN_CORE}/${competition}/events/${gameId}` +
+    `${ESPN_CORE}/${competition}` +
+    `/events/${gameId}` +
     `/competitions/${gameId}/plays?limit=300`;
 
   try {
+
     const data = await fetchESPN(url);
 
-    let plays = [];
+    let refs = [];
 
     if (Array.isArray(data)) {
-      plays = data;
+      refs = data;
     } else if (Array.isArray(data.items)) {
-      plays = data.items;
+      refs = data.items;
     } else if (Array.isArray(data.plays)) {
-      plays = data.plays;
+      refs = data.plays;
     }
 
     console.log(
-      `🎬 PLAY-BY-PLAY ${competition}/${gameId}: ${plays.length} play(s)`
+      `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
     );
 
-    if (plays.length > 0) {
-      console.log(
-        "🔎 PREMIERS PLAYS:",
-        JSON.stringify(plays.slice(0, 5)).slice(0, 5000)
-      );
-    }
-
-    return plays;
+    return refs;
 
   } catch (error) {
+
     console.log(
-      `❌ Play-by-play ${competition}/${gameId}: ${error.message}`
+      `❌ Play refs ${competition}/${gameId}: ${error.message}`
     );
 
     return [];
@@ -120,73 +119,172 @@ async function fetchPlayByPlay(competition, gameId) {
 
 
 // ============================================================
-// TEST LEEDS - NEWCASTLE
+// RÉCUPÉRER UNE VRAIE ACTION À PARTIR DU $ref
 // ============================================================
 
-async function testLeedsNewcastle() {
+async function fetchPlay(refObject) {
 
-  const competition = "eng.1";
-  const gameId = "401879280";
+  const ref =
+    refObject?.$ref ||
+    refObject?.ref ||
+    null;
+
+  if (!ref) {
+    return null;
+  }
+
+  // ESPN fournit parfois http://
+  // On force https://
+  const url = ref.replace(
+    /^http:\/\//i,
+    "https://"
+  );
+
+  try {
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*"
+      }
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      console.log(
+        `❌ PLAY HTTP ${response.status}`
+      );
+      return null;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      console.log(
+        `❌ PLAY non-JSON : ${text.slice(0, 300)}`
+      );
+      return null;
+    }
+
+  } catch (error) {
+
+    console.log(
+      `❌ Erreur PLAY : ${error.message}`
+    );
+
+    return null;
+  }
+}
+
+
+// ============================================================
+// TEST DES VRAIES ACTIONS
+// ============================================================
+
+async function inspectLiveGame(
+  competition,
+  gameId,
+  gameName
+) {
 
   console.log("");
   console.log("==============================================");
-  console.log("🧪 TEST PLAY-BY-PLAY LEEDS 4-1 NEWCASTLE");
-  console.log(`⚽ Match ID : ${gameId}`);
+  console.log("🔎 INSPECTION MATCH");
+  console.log(`⚽ ${gameName}`);
+  console.log(`🆔 ${competition}/${gameId}`);
   console.log("==============================================");
 
-  const plays = await fetchPlayByPlay(
-    competition,
-    gameId
-  );
+  const refs =
+    await getPlayRefs(
+      competition,
+      gameId
+    );
 
-  console.log(
-    `🧪 TOTAL PLAYS TROUVÉS : ${plays.length}`
-  );
+  if (!refs.length) {
 
-  if (plays.length === 0) {
     console.log(
-      "⚠️ Aucun play trouvé pour Leeds-Newcastle."
+      "⚠️ Aucune référence Play-by-Play"
     );
 
     return;
   }
 
-  console.log(
-    "🧪 DONNÉES PLAY-BY-PLAY COMPLÈTES :"
-  );
+  /*
+    IMPORTANT :
+
+    On ne récupère volontairement que les
+    10 dernières actions.
+
+    Cela évite de faire des centaines de
+    requêtes ESPN à chaque Cron.
+  */
+
+  const recentRefs =
+    refs.slice(-10);
 
   console.log(
-    JSON.stringify(plays).slice(0, 15000)
+    `🔬 Analyse des ${recentRefs.length} dernières actions`
   );
 
+  for (let i = 0; i < recentRefs.length; i++) {
+
+    const play =
+      await fetchPlay(
+        recentRefs[i]
+      );
+
+    if (!play) {
+      continue;
+    }
+
+    console.log("");
+    console.log(
+      `🎬 PLAY ${i + 1}/${recentRefs.length}`
+    );
+
+    console.log(
+      JSON.stringify(play).slice(0, 5000)
+    );
+  }
+
+  console.log("");
   console.log("==============================================");
-  console.log("🧪 FIN DU TEST");
+  console.log("✅ FIN INSPECTION");
   console.log("==============================================");
 }
 
 
 // ============================================================
-// SCAN NORMAL
+// SCAN COMPÉTITION
 // ============================================================
 
-async function scanCompetition(competition) {
+async function scanCompetition(
+  competition
+) {
 
   console.log("");
-  console.log(`🔍 Scan compétition : ${competition}`);
+  console.log(
+    `🔍 Scan compétition : ${competition}`
+  );
 
   try {
 
-    const url =
-      ESPN_CDN + encodeURIComponent(competition);
+    const data =
+      await fetchESPN(
+        ESPN_CDN +
+        encodeURIComponent(competition)
+      );
 
-    const data = await fetchESPN(url);
-
-    const sbData = extractScoreboardData(data);
+    const sbData =
+      extractScoreboardData(data);
 
     if (!sbData) {
+
       console.log(
         `❌ Format scoreboard inconnu pour ${competition}`
       );
+
       return;
     }
 
@@ -209,26 +307,28 @@ async function scanCompetition(competition) {
         continue;
       }
 
+      const gameName =
+        match.name ||
+        match.shortName ||
+        "Match";
+
       console.log(
         `📌 Match ${competition}/${gameId}`
       );
 
       console.log(
-        `📅 ${match.name || match.shortName || "Match"}`
+        `⚽ ${gameName}`
       );
 
-      // ------------------------------------------------------
-      // Pour l'instant : on utilise uniquement le scoreboard
-      // pour découvrir les matchs.
-      // ------------------------------------------------------
+      /*
+        Pour chaque match découvert,
+        on inspecte les dernières actions.
+      */
 
-      const plays = await fetchPlayByPlay(
+      await inspectLiveGame(
         competition,
-        gameId
-      );
-
-      console.log(
-        `🎬 ${competition}/${gameId} → ${plays.length} play(s)`
+        gameId,
+        gameName
       );
     }
 
@@ -242,7 +342,7 @@ async function scanCompetition(competition) {
 
 
 // ============================================================
-// SCHEDULED
+// CRON
 // ============================================================
 
 export default {
@@ -254,18 +354,18 @@ export default {
     console.log("🌍 GLOBALFOOT CRON");
     console.log("==============================================");
 
-    // TEST TEMPORAIRE
-    await testLeedsNewcastle();
-
-    // Scan normal
     const competitions =
       GROUPS["*/5 * * * *"] || [];
 
     for (const competition of competitions) {
-      await scanCompetition(competition);
+
+      await scanCompetition(
+        competition
+      );
     }
 
     console.log("");
+    console.log("==============================================");
     console.log("✅ CRON TERMINÉ");
     console.log("==============================================");
   },
@@ -278,7 +378,8 @@ export default {
       {
         status: 200,
         headers: {
-          "content-type": "text/plain; charset=UTF-8"
+          "content-type":
+            "text/plain; charset=UTF-8"
         }
       }
     );
