@@ -138,8 +138,6 @@ async function fetchPlay(refObject) {
     return null;
   }
 
-  // ESPN fournit parfois http://
-  // On force https://
   const url = ref.replace(
     /^http:\/\//i,
     "https://"
@@ -205,7 +203,7 @@ async function fetchPlay(refObject) {
 
 
 // ============================================================
-// TEST DES VRAIES ACTIONS
+// INSPECTION DU MATCH
 // ============================================================
 
 async function inspectLiveGame(
@@ -236,16 +234,6 @@ async function inspectLiveGame(
     return;
   }
 
-  /*
-    IMPORTANT :
-
-    On ne récupère volontairement que les
-    10 dernières actions.
-
-    Cela évite de faire des centaines de
-    requêtes ESPN à chaque Cron.
-  */
-
   const recentRefs =
     refs.slice(-10);
 
@@ -255,58 +243,68 @@ async function inspectLiveGame(
 
   for (let i = 0; i < recentRefs.length; i++) {
 
-  const play =
-    await fetchPlay(
-      recentRefs[i]
+    const play =
+      await fetchPlay(
+        recentRefs[i]
+      );
+
+    if (!play) {
+      continue;
+    }
+
+    console.log("");
+    console.log(
+      `🎬 PLAY ${i + 1}/${recentRefs.length}`
     );
 
-  if (!play) {
-    continue;
+    console.log(
+      JSON.stringify(play).slice(0, 5000)
+    );
+
+    // ==========================================
+    // DÉTECTION D'UN BUT
+    // ==========================================
+
+    if (play.scoringPlay === true) {
+
+      console.log("");
+      console.log("==============================================");
+      console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
+      console.log("==============================================");
+
+      console.log(
+        `🆔 Play ID : ${play.id}`
+      );
+
+      console.log(
+        `📝 Action : ${play.text || "N/A"}`
+      );
+
+      console.log(
+        `🏠 Score domicile : ${play.homeScore}`
+      );
+
+      console.log(
+        `✈️ Score extérieur : ${play.awayScore}`
+      );
+
+      console.log(
+        `⏱️ Minute : ${play.clock?.displayValue || "N/A"}`
+      );
+
+      console.log(
+        `⚽ Score value : ${play.scoreValue || 0}`
+      );
+
+      console.log("==============================================");
+    }
   }
 
   console.log("");
-  console.log(
-    `🎬 PLAY ${i + 1}/${recentRefs.length}`
-  );
-
-  console.log(
-    JSON.stringify(play).slice(0, 5000)
-  );
-
-  // ==========================================
-  // 🚨 DÉTECTION D'UN BUT
-  // ==========================================
-
-  if (play.scoringPlay === true) {
-
-    console.log("");
-    console.log("==============================================");
-    console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
-    console.log("==============================================");
-
-    console.log(
-      `🆔 Play ID : ${play.id}`
-    );
-
-    console.log(
-      `📝 Action : ${play.text || "N/A"}`
-    );
-
-    console.log(
-      `🏠 Score domicile : ${play.homeScore}`
-    );
-
-    console.log(
-      `✈️ Score extérieur : ${play.awayScore}`
-    );
-
-    console.log(
-      `⏱️ Minute : ${play.clock?.displayValue || "N/A"}`
-    );
-
-    console.log("==============================================");
-  }
-  }
+  console.log("==============================================");
+  console.log("✅ FIN INSPECTION");
+  console.log("==============================================");
+}
 
 
 // ============================================================
@@ -374,11 +372,6 @@ async function scanCompetition(
         `⚽ ${gameName}`
       );
 
-      /*
-        Pour chaque match découvert,
-        on inspecte les dernières actions.
-      */
-
       await inspectLiveGame(
         competition,
         gameId,
@@ -423,7 +416,6 @@ export default {
     console.log("✅ CRON TERMINÉ");
     console.log("==============================================");
   },
-
 
   async fetch(request, env) {
 
