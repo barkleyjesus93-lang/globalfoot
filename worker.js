@@ -255,30 +255,58 @@ async function inspectLiveGame(
 
   for (let i = 0; i < recentRefs.length; i++) {
 
-    const play =
-      await fetchPlay(
-        recentRefs[i]
-      );
-
-    if (!play) {
-      continue;
-    }
-
-    console.log("");
-    console.log(
-      `🎬 PLAY ${i + 1}/${recentRefs.length}`
+  const play =
+    await fetchPlay(
+      recentRefs[i]
     );
 
-    console.log(
-      JSON.stringify(play).slice(0, 5000)
-    );
+  if (!play) {
+    continue;
   }
 
   console.log("");
-  console.log("==============================================");
-  console.log("✅ FIN INSPECTION");
-  console.log("==============================================");
-}
+  console.log(
+    `🎬 PLAY ${i + 1}/${recentRefs.length}`
+  );
+
+  console.log(
+    JSON.stringify(play).slice(0, 5000)
+  );
+
+  // ==========================================
+  // 🚨 DÉTECTION D'UN BUT
+  // ==========================================
+
+  if (play.scoringPlay === true) {
+
+    console.log("");
+    console.log("==============================================");
+    console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
+    console.log("==============================================");
+
+    console.log(
+      `🆔 Play ID : ${play.id}`
+    );
+
+    console.log(
+      `📝 Action : ${play.text || "N/A"}`
+    );
+
+    console.log(
+      `🏠 Score domicile : ${play.homeScore}`
+    );
+
+    console.log(
+      `✈️ Score extérieur : ${play.awayScore}`
+    );
+
+    console.log(
+      `⏱️ Minute : ${play.clock?.displayValue || "N/A"}`
+    );
+
+    console.log("==============================================");
+  }
+  }
 
 
 // ============================================================
