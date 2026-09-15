@@ -24,7 +24,7 @@ const RECENT_MATCH_MINUTES = 180;
 const EVENT_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 // =====================================================
-// REQUÊTE ESPN
+// REQUÊTE ESPN CDN
 // =====================================================
 
 async function fetchESPN(url) {
@@ -55,6 +55,69 @@ async function fetchESPN(url) {
 
     throw error;
   }
+}
+
+// =====================================================
+// EXTRACTION DU SCOREBOARD CDN
+// =====================================================
+
+function extractScoreboardData(data) {
+
+  // Format direct
+  if (
+    data &&
+    Array.isArray(data.events)
+  ) {
+    return data;
+  }
+
+  // Format gamepackageJSON
+  if (
+    data?.gamepackageJSON &&
+    typeof data.gamepackageJSON === "object"
+  ) {
+
+    if (Array.isArray(data.gamepackageJSON.events)) {
+      return data.gamepackageJSON;
+    }
+
+    if (
+      data.gamepackageJSON.content &&
+      Array.isArray(data.gamepackageJSON.content.events)
+    ) {
+      return data.gamepackageJSON.content;
+    }
+  }
+
+  // Format content
+  if (
+    data?.content &&
+    typeof data.content === "object"
+  ) {
+
+    if (Array.isArray(data.content.events)) {
+      return data.content;
+    }
+
+    if (
+      data.content.gamepackageJSON &&
+      Array.isArray(
+        data.content.gamepackageJSON.events
+      )
+    ) {
+      return data.content.gamepackageJSON;
+    }
+  }
+
+  // Format nested content
+  if (
+    data?.content?.content &&
+    Array.isArray(data.content.content.events)
+  ) {
+    return data.content.content;
+  }
+
+  return null;
 }
 
 // =====================================================
@@ -143,7 +206,7 @@ async function scanCompetition(
 ) {
 
   const url =
-    `${ESPN_BASE}/${competition}/scoreboard`;
+    `https://cdn.espn.com/core/soccer/scoreboard?xhr=1&league=${competition}`;
 
   const response =
     await fetchESPN(url);
@@ -159,15 +222,46 @@ async function scanCompetition(
     }
 
     console.error(
-      `❌ ESPN ${competition}: HTTP ${response.status}`,
+      `❌ ESPN CDN ${competition}: HTTP ${response.status}`,
       body.slice(0, 500)
     );
 
     return;
   }
 
+  let rawData;
+
+  try {
+
+    rawData =
+      await response.json();
+
+  } catch (error) {
+
+    console.error(
+      `❌ ESPN CDN ${competition}: réponse non JSON`,
+      error?.stack || error
+    );
+
+    return;
+  }
+
   const data =
-    await response.json();
+    extractScoreboardData(rawData);
+
+  if (!data) {
+
+    console.error(
+      `❌ ESPN CDN ${competition}: format de données inconnu`
+    );
+
+    console.log(
+      "🔎 ESPN CDN keys :",
+      Object.keys(rawData || {})
+    );
+
+    return;
+  }
 
   const events =
     Array.isArray(data.events)
@@ -175,7 +269,7 @@ async function scanCompetition(
       : [];
 
   console.log(
-    `⚽ ESPN ${competition}: ${events.length} match(s)`
+    `⚽ ESPN CDN ${competition}: ${events.length} match(s)`
   );
 
   for (const match of events) {
@@ -1005,4 +1099,4 @@ async function publishToFacebook(
 
     data
   };
-    }
+      }
