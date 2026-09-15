@@ -244,11 +244,11 @@ async function inspectLiveGame(
   */
 
   const recentRefs =
-    refs.slice(-30);
+  refs.slice(-8);
 
   console.log(
-    `🔬 Analyse de ${recentRefs.length} dernières références`
-  );
+  `🔬 Analyse des ${recentRefs.length} dernières références`
+);
 
   const plays = [];
 
