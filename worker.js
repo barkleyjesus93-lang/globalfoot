@@ -4,7 +4,8 @@ const GRAPH_API_VERSION = "v26.0";
 const GROUPS = {
   "*/5 * * * *": [
     "eng.1",
-    "fra.1"
+    "fra.1",
+    "esp.1"
   ]
 };
 
