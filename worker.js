@@ -1,11 +1,12 @@
 const PAGE_ID = "987662881093953";
 const GRAPH_API_VERSION = "v26.0";
+
 const ESPN_BASE =
   "https://site.api.espn.com/apis/site/v2/sports/soccer";
 
 // =====================================================
 // TEST CRON
-// Vérifie Premier League + Ligue 1 toutes les 5 minutes.
+// Premier League + Ligue 1 toutes les 5 minutes
 // =====================================================
 
 const GROUPS = {
@@ -23,6 +24,40 @@ const RECENT_MATCH_MINUTES = 180;
 const EVENT_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 // =====================================================
+// REQUÊTE ESPN
+// =====================================================
+
+async function fetchESPN(url) {
+
+  console.log("🌐 ESPN request :", url);
+
+  try {
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      }
+    });
+
+    console.log(
+      `📡 ESPN response : HTTP ${response.status}`
+    );
+
+    return response;
+
+  } catch (error) {
+
+    console.error(
+      "❌ Erreur réseau ESPN :",
+      error?.stack || error
+    );
+
+    throw error;
+  }
+}
+
+// =====================================================
 // WORKER
 // =====================================================
 
@@ -33,20 +68,25 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
+
       return new Response(
         "🌍 GlobalFoot Worker actif.",
         {
           status: 200,
           headers: {
-            "content-type": "text/plain; charset=UTF-8"
+            "content-type":
+              "text/plain; charset=UTF-8"
           }
         }
       );
     }
 
-    return new Response("GlobalFoot OK", {
-      status: 200
-    });
+    return new Response(
+      "GlobalFoot OK",
+      {
+        status: 200
+      }
+    );
   },
 
   async scheduled(controller, env) {
@@ -60,10 +100,12 @@ export default {
       GROUPS[controller.cron];
 
     if (!competitions) {
+
       console.log(
         "Cron inconnu :",
         controller.cron
       );
+
       return;
     }
 
@@ -100,14 +142,25 @@ async function scanCompetition(
   env
 ) {
 
-  const response = await fetch(
-    `${ESPN_BASE}/${competition}/scoreboard`
-  );
+  const url =
+    `${ESPN_BASE}/${competition}/scoreboard`;
+
+  const response =
+    await fetchESPN(url);
 
   if (!response.ok) {
 
-    console.log(
-      `ESPN ${competition}: HTTP ${response.status}`
+    let body = "";
+
+    try {
+      body = await response.text();
+    } catch {
+      body = "";
+    }
+
+    console.error(
+      `❌ ESPN ${competition}: HTTP ${response.status}`,
+      body.slice(0, 500)
     );
 
     return;
@@ -120,6 +173,10 @@ async function scanCompetition(
     Array.isArray(data.events)
       ? data.events
       : [];
+
+  console.log(
+    `⚽ ESPN ${competition}: ${events.length} match(s)`
+  );
 
   for (const match of events) {
 
@@ -190,14 +247,16 @@ async function inspectMatch(
   env
 ) {
 
-  const response = await fetch(
-    `${ESPN_BASE}/${competition}/summary?event=${encodeURIComponent(match.id)}`
-  );
+  const url =
+    `${ESPN_BASE}/${competition}/summary?event=${encodeURIComponent(match.id)}`;
+
+  const response =
+    await fetchESPN(url);
 
   if (!response.ok) {
 
     console.log(
-      `Summary indisponible : ${competition}/${match.id}`
+      `❌ Summary indisponible : ${competition}/${match.id} HTTP ${response.status}`
     );
 
     return;
@@ -218,9 +277,6 @@ async function inspectMatch(
   const score =
     getCurrentScore(match);
 
-  // Évite de publier deux fois le même événement
-  // lorsqu'ESPN le représente dans plusieurs parties
-  // du résumé.
   const processed =
     new Set();
 
@@ -240,8 +296,6 @@ async function inspectMatch(
       continue;
     }
 
-    // Hors-jeu simple :
-    // pas de publication.
     if (eventType === "OFFSIDE_ONLY") {
       continue;
     }
@@ -273,7 +327,7 @@ async function inspectMatch(
 }
 
 // =====================================================
-// DÉTECTION DES 9 ÉVÉNEMENTS GLOBALFOOT
+// DÉTECTION DES ÉVÉNEMENTS
 // =====================================================
 
 function detectEventType(event) {
@@ -308,57 +362,29 @@ function detectEventType(event) {
   const penaltyAwarded =
     isPenaltyAwarded(event, text);
 
-  // ===================================================
-  // 1. DEUXIÈME JAUNE → ROUGE
-  // ===================================================
-
   if (secondYellow) {
     return "SECOND_YELLOW_RED";
   }
-
-  // ===================================================
-  // 2. CARTON ROUGE
-  // ===================================================
 
   if (red) {
     return "RED_CARD";
   }
 
-  // ===================================================
-  // 3. CARTON JAUNE
-  // ===================================================
-
   if (yellow) {
     return "YELLOW_CARD";
   }
-
-  // ===================================================
-  // 4. PENALTY RATÉ
-  // ===================================================
 
   if (penaltyMissed) {
     return "MISSED_PENALTY";
   }
 
-  // ===================================================
-  // 5. PENALTY ACCORDÉ
-  // ===================================================
-
   if (penaltyAwarded) {
     return "PENALTY_AWARDED";
   }
 
-  // ===================================================
-  // 6. BUT ANNULÉ
-  // ===================================================
-
   if (cancelledGoal) {
     return "CANCELLED_GOAL";
   }
-
-  // ===================================================
-  // 7. BUT
-  // ===================================================
 
   if (scoring) {
 
@@ -372,10 +398,6 @@ function detectEventType(event) {
 
     return "GOAL";
   }
-
-  // ===================================================
-  // 8. HORS-JEU SIMPLE
-  // ===================================================
 
   if (isOffside(event, text)) {
     return "OFFSIDE_ONLY";
@@ -680,6 +702,7 @@ function getEventPlayer(event) {
 function getEventMinute(event) {
 
   if (event?.clock?.displayValue) {
+
     return event.clock.displayValue
       .replace(/\s+/g, "");
   }
@@ -775,10 +798,6 @@ function formatGlobalFootMessage(
   const matchLine =
     getMatchLine(score);
 
-  // ================================================
-  // BUT
-  // ================================================
-
   if (eventType === "GOAL") {
 
     return `⚡ BUT !
@@ -790,10 +809,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
-  // ================================================
-  // BUT CONTRE SON CAMP
-  // ================================================
 
   if (eventType === "OWN_GOAL") {
 
@@ -807,10 +822,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-  // ================================================
-  // PENALTY MARQUÉ
-  // ================================================
-
   if (eventType === "PENALTY_GOAL") {
 
     return `🎯 PENALTY !
@@ -822,10 +833,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
-  // ================================================
-  // PENALTY RATÉ
-  // ================================================
 
   if (eventType === "MISSED_PENALTY") {
 
@@ -839,10 +846,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-  // ================================================
-  // PENALTY ACCORDÉ
-  // ================================================
-
   if (eventType === "PENALTY_AWARDED") {
 
     return `🎯 PENALTY !
@@ -854,10 +857,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
-  // ================================================
-  // BUT ANNULÉ
-  // ================================================
 
   if (eventType === "CANCELLED_GOAL") {
 
@@ -902,10 +901,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-  // ================================================
-  // CARTON JAUNE
-  // ================================================
-
   if (eventType === "YELLOW_CARD") {
 
     return `🟨 CARTON !
@@ -918,10 +913,6 @@ ${matchLine}
 🌍 GlobalFoot`;
   }
 
-  // ================================================
-  // CARTON ROUGE
-  // ================================================
-
   if (eventType === "RED_CARD") {
 
     return `🟥 CARTON ROUGE !
@@ -933,10 +924,6 @@ ${matchLine}
 
 🌍 GlobalFoot`;
   }
-
-  // ================================================
-  // DEUXIÈME JAUNE → ROUGE
-  // ================================================
 
   if (eventType === "SECOND_YELLOW_RED") {
 
@@ -1018,4 +1005,4 @@ async function publishToFacebook(
 
     data
   };
-        }
+    }
