@@ -202,7 +202,6 @@ async function fetchPlay(refObject) {
     return null;
   }
 }
-}
 
 
 // ============================================================
