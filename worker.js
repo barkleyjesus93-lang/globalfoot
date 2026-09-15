@@ -4,11 +4,6 @@ const GRAPH_API_VERSION = "v26.0";
 const ESPN_BASE =
   "https://site.api.espn.com/apis/site/v2/sports/soccer";
 
-// =====================================================
-// TEST CRON
-// Premier League + Ligue 1 toutes les 5 minutes
-// =====================================================
-
 const GROUPS = {
   "*/5 * * * *": [
     "eng.1",
@@ -16,87 +11,260 @@ const GROUPS = {
   ]
 };
 
-// =====================================================
-// CONFIGURATION
-// =====================================================
+// ======================================================
+// CRON
+// ======================================================
 
-const RECENT_MATCH_MINUTES = 180;
-const EVENT_TTL_SECONDS = 60 * 60 * 24 * 90;
+export default {
+  async scheduled(controller, env, ctx) {
+    console.log(
+      "🔥 GLOBALFOOT CRON EXÉCUTÉ :",
+      controller.cron
+    );
 
-// =====================================================
-// REQUÊTE ESPN CDN
-// =====================================================
-
-async function fetchESPN(url) {
-
-  console.log("🌐 ESPN request :", url);
-
-  try {
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      }
-    });
+    const competitions =
+      GROUPS[controller.cron] || [];
 
     console.log(
-      `📡 ESPN response : HTTP ${response.status}`
+      `🌍 GlobalFoot : ${competitions.length} compétitions`
     );
 
-    return response;
+    for (const competition of competitions) {
+      try {
+        await scanCompetition(competition, env);
+      } catch (error) {
+        console.error(
+          `❌ Erreur ${competition}:`,
+          error?.stack || error?.message || String(error)
+        );
+      }
+    }
+  },
 
-  } catch (error) {
-
-    console.error(
-      "❌ Erreur réseau ESPN :",
-      error?.stack || error
+  async fetch(request) {
+    return new Response(
+      "🌍 GlobalFoot Worker actif.",
+      {
+        headers: {
+          "content-type": "text/plain; charset=UTF-8"
+        }
+      }
     );
+  }
+};
 
-    throw error;
+// ======================================================
+// FETCH ESPN
+// ======================================================
+
+async function fetchESPN(url) {
+  console.log("🌐 ESPN request :", url);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "User-Agent":
+        "Mozilla/5.0 (compatible; GlobalFoot/1.0)"
+    }
+  });
+
+  console.log(
+    "📡 ESPN response : HTTP",
+    response.status
+  );
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `ESPN HTTP ${response.status}: ${text.slice(0, 500)}`
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `ESPN réponse non-JSON: ${text.slice(0, 500)}`
+    );
   }
 }
 
-// =====================================================
-// EXTRACTION DU SCOREBOARD CDN
-// =====================================================
+// ======================================================
+// DIAGNOSTIC CONTENT
+// ======================================================
+
+function diagnosticContent(data, competition) {
+  console.log(
+    `🧪 DIAGNOSTIC ESPN ${competition}`
+  );
+
+  console.log(
+    "📦 ESPN ROOT TYPE :",
+    typeof data
+  );
+
+  if (!data || typeof data !== "object") {
+    console.log(
+      "❌ ESPN ROOT invalide"
+    );
+    return;
+  }
+
+  console.log(
+    "📦 ESPN ROOT KEYS :",
+    Object.keys(data).slice(0, 50)
+  );
+
+  const content = data.content;
+
+  console.log(
+    "📦 ESPN CONTENT TYPE :",
+    typeof content
+  );
+
+  if (content === undefined) {
+    console.log(
+      "❌ ESPN CONTENT : absent"
+    );
+    return;
+  }
+
+  if (typeof content === "string") {
+    console.log(
+      "📦 ESPN CONTENT STRING LENGTH :",
+      content.length
+    );
+
+    console.log(
+      "📦 ESPN CONTENT PREVIEW :",
+      content.slice(0, 3000)
+    );
+
+    try {
+      const parsed = JSON.parse(content);
+
+      console.log(
+        "📦 ESPN CONTENT PARSED TYPE :",
+        typeof parsed
+      );
+
+      if (
+        parsed &&
+        typeof parsed === "object"
+      ) {
+        console.log(
+          "📦 ESPN CONTENT PARSED KEYS :",
+          Object.keys(parsed).slice(0, 50)
+        );
+
+        if (parsed.sbData) {
+          console.log(
+            "🎯 ESPN CONTENT sbData TROUVÉ"
+          );
+
+          console.log(
+            "🎯 sbData KEYS :",
+            Object.keys(parsed.sbData).slice(0, 50)
+          );
+        }
+      }
+    } catch {
+      console.log(
+        "⚠️ ESPN CONTENT n'est pas un JSON directement parsable"
+      );
+    }
+
+    return;
+  }
+
+  if (
+    typeof content === "object"
+  ) {
+    console.log(
+      "📦 ESPN CONTENT KEYS :",
+      Object.keys(content).slice(0, 100)
+    );
+
+    if (content.sbData) {
+      console.log(
+        "🎯 ESPN CONTENT sbData TROUVÉ"
+      );
+
+      if (
+        typeof content.sbData === "object"
+      ) {
+        console.log(
+          "🎯 sbData KEYS :",
+          Object.keys(content.sbData).slice(0, 100)
+        );
+      }
+
+      console.log(
+        "🎯 sbData PREVIEW :",
+        safePreview(content.sbData, 5000)
+      );
+    }
+
+    if (content.events) {
+      console.log(
+        "🎯 ESPN CONTENT events TROUVÉ :",
+        Array.isArray(content.events)
+          ? content.events.length
+          : typeof content.events
+      );
+    }
+
+    if (content.scoreboard) {
+      console.log(
+        "🎯 ESPN CONTENT scoreboard TROUVÉ"
+      );
+    }
+  }
+}
+
+function safePreview(value, maxLength = 3000) {
+  try {
+    const json = JSON.stringify(value);
+
+    return json.length > maxLength
+      ? json.slice(0, maxLength) + "..."
+      : json;
+  } catch {
+    return "[Impossible de convertir en JSON]";
+  }
+}
+
+// ======================================================
+// EXTRACTION SCOREBOARD
+// ======================================================
 
 function extractScoreboardData(data) {
+  if (!data || typeof data !== "object") {
+    return [];
+  }
 
   // Format direct
-  if (
-    data &&
-    Array.isArray(data.events)
-  ) {
-    return data;
+  if (Array.isArray(data.events)) {
+    return data.events;
   }
 
-  // Format gamepackageJSON
+  // gamepackageJSON
   if (
-    data?.gamepackageJSON &&
-    typeof data.gamepackageJSON === "object"
+    data.gamepackageJSON &&
+    Array.isArray(data.gamepackageJSON.events)
   ) {
-
-    if (Array.isArray(data.gamepackageJSON.events)) {
-      return data.gamepackageJSON;
-    }
-
-    if (
-      data.gamepackageJSON.content &&
-      Array.isArray(data.gamepackageJSON.content.events)
-    ) {
-      return data.gamepackageJSON.content;
-    }
+    return data.gamepackageJSON.events;
   }
 
-  // Format content
+  // content
   if (
-    data?.content &&
+    data.content &&
     typeof data.content === "object"
   ) {
-
     if (Array.isArray(data.content.events)) {
-      return data.content;
+      return data.content.events;
     }
 
     if (
@@ -105,998 +273,489 @@ function extractScoreboardData(data) {
         data.content.gamepackageJSON.events
       )
     ) {
-      return data.content.gamepackageJSON;
+      return data.content.gamepackageJSON.events;
+    }
+
+    if (
+      data.content.sbData &&
+      typeof data.content.sbData === "object"
+    ) {
+      if (
+        Array.isArray(
+          data.content.sbData.events
+        )
+      ) {
+        return data.content.sbData.events;
+      }
+
+      if (
+        data.content.sbData.content &&
+        Array.isArray(
+          data.content.sbData.content.events
+        )
+      ) {
+        return data.content.sbData.content.events;
+      }
     }
   }
 
-  // Format nested content
-  if (
-    data?.content?.content &&
-    Array.isArray(data.content.content.events)
-  ) {
-    return data.content.content;
+  // content sous forme de chaîne JSON
+  if (typeof data.content === "string") {
+    try {
+      const parsed = JSON.parse(
+        data.content
+      );
+
+      if (Array.isArray(parsed.events)) {
+        return parsed.events;
+      }
+
+      if (
+        parsed.sbData &&
+        Array.isArray(parsed.sbData.events)
+      ) {
+        return parsed.sbData.events;
+      }
+    } catch {
+      // Rien
+    }
   }
 
-  return null;
+  return [];
 }
 
-// =====================================================
-// WORKER
-// =====================================================
-
-export default {
-
-  async fetch(request, env) {
-
-    const url = new URL(request.url);
-
-    if (url.pathname === "/") {
-
-      return new Response(
-        "🌍 GlobalFoot Worker actif.",
-        {
-          status: 200,
-          headers: {
-            "content-type":
-              "text/plain; charset=UTF-8"
-          }
-        }
-      );
-    }
-
-    return new Response(
-      "GlobalFoot OK",
-      {
-        status: 200
-      }
-    );
-  },
-
-  async scheduled(controller, env) {
-
-    console.log(
-      "🔥 GLOBALFOOT CRON EXÉCUTÉ :",
-      controller.cron
-    );
-
-    const competitions =
-      GROUPS[controller.cron];
-
-    if (!competitions) {
-
-      console.log(
-        "Cron inconnu :",
-        controller.cron
-      );
-
-      return;
-    }
-
-    console.log(
-      `🌍 GlobalFoot : ${competitions.length} compétitions`
-    );
-
-    for (const competition of competitions) {
-
-      try {
-
-        await scanCompetition(
-          competition,
-          env
-        );
-
-      } catch (error) {
-
-        console.error(
-          `Erreur ${competition}:`,
-          error?.stack || error
-        );
-      }
-    }
-  }
-};
-
-// =====================================================
+// ======================================================
 // SCAN COMPÉTITION
-// =====================================================
+// ======================================================
 
 async function scanCompetition(
   competition,
   env
 ) {
-
   const url =
-    `https://cdn.espn.com/core/soccer/scoreboard?xhr=1&league=${competition}`;
-
-  const response =
-    await fetchESPN(url);
-
-  if (!response.ok) {
-
-    let body = "";
-
-    try {
-      body = await response.text();
-    } catch {
-      body = "";
-    }
-
-    console.error(
-      `❌ ESPN CDN ${competition}: HTTP ${response.status}`,
-      body.slice(0, 500)
-    );
-
-    return;
-  }
-
-  let rawData;
+    `https://cdn.espn.com/core/soccer/scoreboard?xhr=1&league=${encodeURIComponent(competition)}`;
 
   try {
+    const data =
+      await fetchESPN(url);
 
-    rawData =
-      await response.json();
-
-  } catch (error) {
-
-    console.error(
-      `❌ ESPN CDN ${competition}: réponse non JSON`,
-      error?.stack || error
+    // Diagnostic automatique
+    diagnosticContent(
+      data,
+      competition
     );
 
-    return;
-  }
-
-  const data =
-    extractScoreboardData(rawData);
-
-  if (!data) {
-
-    console.error(
-      `❌ ESPN CDN ${competition}: format de données inconnu`
-    );
+    const events =
+      extractScoreboardData(data);
 
     console.log(
-      "🔎 ESPN CDN keys :",
-      Object.keys(rawData || {})
+      `⚽ ESPN CDN ${competition}: ${events.length} match(s)`
     );
 
+    if (!events.length) {
+      console.error(
+        `❌ ESPN CDN ${competition}: aucun match extrait`
+      );
+
+      return;
+    }
+
+    for (const match of events) {
+      try {
+        await inspectMatch(
+          competition,
+          match,
+          env
+        );
+      } catch (error) {
+        console.error(
+          `❌ Match ${competition}/${match?.id}:`,
+          error?.message || String(error)
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      `❌ ESPN CDN ${competition}:`,
+      error?.message || String(error)
+    );
+  }
+}
+
+// ======================================================
+// INSPECTION MATCH
+// ======================================================
+
+async function inspectMatch(
+  competition,
+  match,
+  env
+) {
+  if (!match?.id) {
     return;
   }
 
-  const events =
-    Array.isArray(data.events)
-      ? data.events
-      : [];
-
   console.log(
-    `⚽ ESPN CDN ${competition}: ${events.length} match(s)`
+    `🔎 Inspection match ${competition}: ${match.id}`
   );
 
-  for (const match of events) {
-
-    if (!shouldInspectMatch(match)) {
-      continue;
-    }
-
-    try {
-
-      await inspectMatch(
-        match,
-        competition,
-        env
-      );
-
-    } catch (error) {
-
-      console.error(
-        `Erreur match ${competition}/${match.id}:`,
-        error?.stack || error
-      );
-    }
-  }
-}
-
-// =====================================================
-// MATCH INTÉRESSANT ?
-// =====================================================
-
-function shouldInspectMatch(match) {
-
-  const state =
-    match?.status?.type?.state;
-
-  // Match en direct
-  if (state === "in") {
-    return true;
-  }
-
-  // Match terminé récemment
-  if (state !== "post") {
-    return false;
-  }
-
-  const matchTime =
-    Date.parse(match?.date || "");
-
-  if (!Number.isFinite(matchTime)) {
-    return false;
-  }
-
-  const ageMinutes =
-    (Date.now() - matchTime) / 60000;
-
-  return (
-    ageMinutes >= -10 &&
-    ageMinutes <= RECENT_MATCH_MINUTES
-  );
-}
-
-// =====================================================
-// RÉCUPÉRATION DES ÉVÉNEMENTS
-// =====================================================
-
-async function inspectMatch(
-  match,
-  competition,
-  env
-) {
-
+  // Pour l'instant, on conserve l'endpoint summary
+  // afin de diagnostiquer séparément son comportement.
   const url =
     `${ESPN_BASE}/${competition}/summary?event=${encodeURIComponent(match.id)}`;
 
-  const response =
-    await fetchESPN(url);
+  try {
+    const data =
+      await fetchESPN(url);
 
-  if (!response.ok) {
+    const keyEvents =
+      Array.isArray(data?.keyEvents)
+        ? data.keyEvents
+        : [];
 
     console.log(
-      `❌ Summary indisponible : ${competition}/${match.id} HTTP ${response.status}`
+      `🎯 ${competition}/${match.id}: ${keyEvents.length} événement(s)`
     );
 
-    return;
-  }
-
-  const summary =
-    await response.json();
-
-  const keyEvents =
-    Array.isArray(summary.keyEvents)
-      ? summary.keyEvents
-      : [];
-
-  if (!keyEvents.length) {
-    return;
-  }
-
-  const score =
-    getCurrentScore(match);
-
-  const processed =
-    new Set();
-
-  for (
-    let index = 0;
-    index < keyEvents.length;
-    index++
-  ) {
-
-    const event =
-      keyEvents[index];
-
-    const eventType =
-      detectEventType(event);
-
-    if (!eventType) {
-      continue;
-    }
-
-    if (eventType === "OFFSIDE_ONLY") {
-      continue;
-    }
-
-    const eventId =
-      createEventId(
+    for (const event of keyEvents) {
+      await processEvent(
         competition,
-        match.id,
+        match,
         event,
-        index,
-        eventType
+        env
       );
-
-    if (processed.has(eventId)) {
-      continue;
     }
-
-    processed.add(eventId);
-
-    await processEvent(
-      event,
-      eventType,
-      eventId,
-      match,
-      score,
-      env
+  } catch (error) {
+    console.error(
+      `❌ Summary ${competition}/${match.id}:`,
+      error?.message || String(error)
     );
   }
 }
 
-// =====================================================
-// DÉTECTION DES ÉVÉNEMENTS
-// =====================================================
-
-function detectEventType(event) {
-
-  const text =
-    getEventText(event);
-
-  const scoring =
-    event?.scoringPlay === true;
-
-  const penalty =
-    isPenaltyEvent(event, text);
-
-  const ownGoal =
-    isOwnGoal(event, text);
-
-  const cancelledGoal =
-    isCancelledGoal(event, text);
-
-  const yellow =
-    isYellowCard(event, text);
-
-  const red =
-    isRedCard(event, text);
-
-  const secondYellow =
-    isSecondYellow(event, text);
-
-  const penaltyMissed =
-    isMissedPenalty(event, text);
-
-  const penaltyAwarded =
-    isPenaltyAwarded(event, text);
-
-  if (secondYellow) {
-    return "SECOND_YELLOW_RED";
-  }
-
-  if (red) {
-    return "RED_CARD";
-  }
-
-  if (yellow) {
-    return "YELLOW_CARD";
-  }
-
-  if (penaltyMissed) {
-    return "MISSED_PENALTY";
-  }
-
-  if (penaltyAwarded) {
-    return "PENALTY_AWARDED";
-  }
-
-  if (cancelledGoal) {
-    return "CANCELLED_GOAL";
-  }
-
-  if (scoring) {
-
-    if (ownGoal) {
-      return "OWN_GOAL";
-    }
-
-    if (penalty) {
-      return "PENALTY_GOAL";
-    }
-
-    return "GOAL";
-  }
-
-  if (isOffside(event, text)) {
-    return "OFFSIDE_ONLY";
-  }
-
-  return null;
-}
-
-// =====================================================
-// TEXTE D'UN ÉVÉNEMENT
-// =====================================================
-
-function getEventText(event) {
-
-  let text = "";
-
-  try {
-
-    text += ` ${event?.text || ""}`;
-    text += ` ${event?.type?.text || ""}`;
-    text += ` ${event?.type?.name || ""}`;
-    text += ` ${event?.type?.id || ""}`;
-    text += ` ${event?.detail || ""}`;
-    text += ` ${event?.description || ""}`;
-    text += ` ${event?.shortText || ""}`;
-    text += ` ${JSON.stringify(event || {})}`;
-
-  } catch {
-    // Rien
-  }
-
-  return text.toLowerCase();
-}
-
-// =====================================================
-// IDENTIFICATION DES ÉVÉNEMENTS
-// =====================================================
-
-function isPenaltyEvent(event, text) {
-
-  return (
-    text.includes("penalty") ||
-    text.includes("pen.") ||
-    text.includes("penalty kick")
-  );
-}
-
-function isOwnGoal(event, text) {
-
-  return (
-    text.includes("own goal") ||
-    text.includes("own_goal") ||
-    text.includes("autogoal") ||
-    text.includes("autogol")
-  );
-}
-
-function isCancelledGoal(event, text) {
-
-  return (
-    text.includes("goal disallowed") ||
-    text.includes("goal cancelled") ||
-    text.includes("goal canceled") ||
-    text.includes("goal overturned") ||
-    text.includes("goal nullified") ||
-    text.includes("but annul") ||
-    text.includes("but refus") ||
-    text.includes("annulé")
-  );
-}
-
-function isOffside(event, text) {
-
-  return (
-    text.includes("offside") ||
-    text.includes("hors-jeu")
-  );
-}
-
-function isYellowCard(event, text) {
-
-  if (
-    text.includes("second yellow") ||
-    text.includes("second booking") ||
-    text.includes("second caution")
-  ) {
-    return false;
-  }
-
-  return (
-    text.includes("yellow card") ||
-    text.includes("yellow") ||
-    text.includes("caution")
-  );
-}
-
-function isRedCard(event, text) {
-
-  return (
-    text.includes("red card") ||
-    text.includes("red-card") ||
-    text.includes("straight red") ||
-    text.includes("sent off") ||
-    text.includes("ejected")
-  );
-}
-
-function isSecondYellow(event, text) {
-
-  return (
-    text.includes("second yellow") ||
-    text.includes("second booking") ||
-    text.includes("second caution") ||
-    text.includes("2nd yellow") ||
-    text.includes("yellow-red")
-  );
-}
-
-function isMissedPenalty(event, text) {
-
-  if (!isPenaltyEvent(event, text)) {
-    return false;
-  }
-
-  return (
-    text.includes("missed") ||
-    text.includes("miss") ||
-    text.includes("saved") ||
-    text.includes("save") ||
-    text.includes("penalty miss") ||
-    text.includes("penalty saved") ||
-    text.includes("penalty not scored") ||
-    text.includes("off target") ||
-    text.includes("wide")
-  );
-}
-
-function isPenaltyAwarded(event, text) {
-
-  if (!isPenaltyEvent(event, text)) {
-    return false;
-  }
-
-  if (event?.scoringPlay === true) {
-    return false;
-  }
-
-  if (isMissedPenalty(event, text)) {
-    return false;
-  }
-
-  return (
-    text.includes("penalty awarded") ||
-    text.includes("penalty given") ||
-    text.includes("penalty won") ||
-    (
-      text.includes("penalty") &&
-      (
-        text.includes("awarded") ||
-        text.includes("given") ||
-        text.includes("decision")
-      )
-    )
-  );
-}
-
-// =====================================================
-// TRAITEMENT D'UN ÉVÉNEMENT
-// =====================================================
+// ======================================================
+// TRAITEMENT DES ÉVÉNEMENTS
+// ======================================================
 
 async function processEvent(
-  event,
-  eventType,
-  eventId,
+  competition,
   match,
-  score,
+  event,
   env
 ) {
-
-  const alreadyPosted =
-    await env.GLOBALFOOT_KV.get(eventId);
-
-  if (alreadyPosted) {
+  if (!event) {
     return;
   }
 
-  const player =
-    getEventPlayer(event);
+  const eventType =
+    getEventType(event);
 
-  const minute =
-    getEventMinute(event);
+  if (!eventType) {
+    return;
+  }
 
-  const message =
-    formatGlobalFootMessage(
-      eventType,
-      player,
-      minute,
-      score,
+  const allowedTypes = [
+    "GOAL",
+    "OWN_GOAL",
+    "PENALTY_GOAL",
+    "MISSED_PENALTY",
+    "PENALTY_AWARDED",
+    "CANCELLED_GOAL",
+    "YELLOW_CARD",
+    "RED_CARD",
+    "SECOND_YELLOW_RED"
+  ];
+
+  if (!allowedTypes.includes(eventType)) {
+    return;
+  }
+
+  const eventId =
+    buildEventId(
+      competition,
+      match,
       event
     );
 
-  if (!message) {
+  const seen =
+    await env.GLOBALFOOT_KV.get(eventId);
+
+  if (seen) {
     return;
   }
+
+  const message =
+    formatFacebookMessage(
+      competition,
+      match,
+      event,
+      eventType
+    );
 
   console.log(
-    `🌍 GlobalFoot ${eventType}: ${message}`
+    "📘 Facebook publication :",
+    message
   );
 
-  const result =
-    await publishToFacebook(
-      message,
-      env.FACEBOOK_PAGE_TOKEN
-    );
-
-  if (!result.ok) {
-
-    console.error(
-      "❌ Facebook a refusé la publication :",
-      JSON.stringify(result.data)
-    );
-
-    return;
-  }
+  await publishToFacebook(
+    message,
+    env
+  );
 
   await env.GLOBALFOOT_KV.put(
     eventId,
     "1",
     {
-      expirationTtl: EVENT_TTL_SECONDS
+      expirationTtl: 60 * 60 * 24 * 90
     }
   );
-
-  console.log(
-    `✅ Événement publié : ${eventId}`
-  );
 }
 
-// =====================================================
-// ID UNIQUE D'ÉVÉNEMENT
-// =====================================================
+// ======================================================
+// EVENT TYPE
+// ======================================================
 
-function createEventId(
-  competition,
-  matchId,
-  event,
-  index,
-  eventType
-) {
+function getEventType(event) {
+  const type =
+    event?.type?.text ||
+    event?.type?.name ||
+    event?.type?.id ||
+    event?.type;
 
-  const eventId =
-    event?.id ??
-    event?.sequenceNumber ??
-    event?.clock?.value ??
-    event?.clock?.displayValue ??
-    event?.type?.id ??
-    `${eventType}-${index}`;
-
-  return (
-    `event:${competition}:${matchId}:${eventType}:${eventId}`
-  );
-}
-
-// =====================================================
-// JOUEUR / ACTEUR
-// =====================================================
-
-function getEventPlayer(event) {
-
-  if (event?.athlete?.displayName) {
-    return event.athlete.displayName;
+  if (!type) {
+    return null;
   }
 
-  if (event?.player?.displayName) {
-    return event.player.displayName;
-  }
+  const value =
+    String(type)
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
 
-  for (
-    const participant of event?.participants || []
+  if (
+    value.includes("OWN") &&
+    value.includes("GOAL")
   ) {
-
-    if (
-      participant?.athlete?.displayName
-    ) {
-      return participant.athlete.displayName;
-    }
-
-    if (
-      participant?.player?.displayName
-    ) {
-      return participant.player.displayName;
-    }
+    return "OWN_GOAL";
   }
 
-  return "Joueur";
-}
-
-// =====================================================
-// MINUTE
-// =====================================================
-
-function getEventMinute(event) {
-
-  if (event?.clock?.displayValue) {
-
-    return event.clock.displayValue
-      .replace(/\s+/g, "");
+  if (
+    value.includes("PENALTY") &&
+    value.includes("GOAL")
+  ) {
+    return "PENALTY_GOAL";
   }
 
-  if (event?.minute != null) {
-    return `${event.minute}'`;
+  if (
+    value.includes("MISSED") &&
+    value.includes("PENALTY")
+  ) {
+    return "MISSED_PENALTY";
   }
 
-  if (event?.clock?.value != null) {
-
-    const seconds =
-      Number(event.clock.value);
-
-    if (Number.isFinite(seconds)) {
-      return `${Math.floor(seconds / 60)}'`;
-    }
+  if (
+    value.includes("PENALTY") &&
+    value.includes("AWARDED")
+  ) {
+    return "PENALTY_AWARDED";
   }
 
-  return "?";
-}
-
-// =====================================================
-// SCORE
-// =====================================================
-
-function getCurrentScore(match) {
-
-  const teams =
-    match?.competitions?.[0]?.competitors || [];
-
-  let home = {
-    name: "Équipe locale",
-    score: "?"
-  };
-
-  let away = {
-    name: "Équipe visiteuse",
-    score: "?"
-  };
-
-  for (const team of teams) {
-
-    const data = {
-
-      name:
-        team?.team?.shortDisplayName ||
-        team?.team?.displayName ||
-        team?.team?.name ||
-        "Équipe",
-
-      score:
-        team?.score ?? "?"
-    };
-
-    if (team?.homeAway === "home") {
-      home = data;
-    }
-
-    if (team?.homeAway === "away") {
-      away = data;
-    }
+  if (
+    value.includes("CANCEL") &&
+    value.includes("GOAL")
+  ) {
+    return "CANCELLED_GOAL";
   }
 
-  return {
-    home,
-    away
-  };
-}
-
-// =====================================================
-// NOM DU MATCH
-// =====================================================
-
-function getMatchLine(score) {
-
-  return (
-    `📍 ${score.home.name} ${score.home.score}-${score.away.score} ${score.away.name}`
-  );
-}
-
-// =====================================================
-// FORMAT GLOBALFOOT
-// =====================================================
-
-function formatGlobalFootMessage(
-  eventType,
-  player,
-  minute,
-  score,
-  event
-) {
-
-  const matchLine =
-    getMatchLine(score);
-
-  if (eventType === "GOAL") {
-
-    return `⚡ BUT !
-
-⚽️ ${player} frappe et ça fait ${score.home.score}-${score.away.score} !
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
+  if (
+    value.includes("SECOND") &&
+    value.includes("YELLOW") &&
+    value.includes("RED")
+  ) {
+    return "SECOND_YELLOW_RED";
   }
 
-  if (eventType === "OWN_GOAL") {
-
-    return `⚡ BUT !
-
-⚽️ But contre son camp de ${player} !
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
+  if (value.includes("RED")) {
+    return "RED_CARD";
   }
 
-  if (eventType === "PENALTY_GOAL") {
-
-    return `🎯 PENALTY !
-
-⚽️ ${player} transforme le penalty !
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
+  if (value.includes("YELLOW")) {
+    return "YELLOW_CARD";
   }
 
-  if (eventType === "MISSED_PENALTY") {
-
-    return `❌ PENALTY RATÉ !
-
-🎯 ${player} manque sa tentative.
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
-  }
-
-  if (eventType === "PENALTY_AWARDED") {
-
-    return `🎯 PENALTY !
-
-🚨 Penalty accordé.
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
-  }
-
-  if (eventType === "CANCELLED_GOAL") {
-
-    const text =
-      getEventText(event);
-
-    let reason =
-      "Le but est refusé.";
-
-    if (
-      text.includes("offside") ||
-      text.includes("hors-jeu")
-    ) {
-
-      reason =
-        "Le but est annulé pour hors-jeu.";
-
-    } else if (
-      text.includes("foul") ||
-      text.includes("faute")
-    ) {
-
-      reason =
-        "Le but est annulé pour faute.";
-
-    } else if (
-      text.includes("var") ||
-      text.includes("overturned")
-    ) {
-
-      reason =
-        "Le but est annulé après vérification.";
-    }
-
-    return `🚫 BUT ANNULÉ !
-
-⚽️ ${reason}
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
-  }
-
-  if (eventType === "YELLOW_CARD") {
-
-    return `🟨 CARTON !
-
-👤 ${player} est averti.
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
-  }
-
-  if (eventType === "RED_CARD") {
-
-    return `🟥 CARTON ROUGE !
-
-🚨 ${player} est expulsé !
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
-  }
-
-  if (eventType === "SECOND_YELLOW_RED") {
-
-    return `🟨🟥 EXPULSION !
-
-🚨 ${player} reçoit un deuxième jaune et est expulsé !
-⏱️ ${minute}
-
-${matchLine}
-
-🌍 GlobalFoot`;
+  if (value.includes("GOAL")) {
+    return "GOAL";
   }
 
   return null;
 }
 
-// =====================================================
+// ======================================================
+// EVENT ID
+// ======================================================
+
+function buildEventId(
+  competition,
+  match,
+  event
+) {
+  return [
+    "globalfoot",
+    competition,
+    match?.id || "unknown",
+    event?.id ||
+      event?.sequenceNumber ||
+      event?.clock?.displayValue ||
+      JSON.stringify(event)
+  ].join(":");
+}
+
+// ======================================================
+// FACEBOOK MESSAGE
+// ======================================================
+
+function formatFacebookMessage(
+  competition,
+  match,
+  event,
+  eventType
+) {
+  const competitionName =
+    competition;
+
+  const homeTeam =
+    match?.competitions?.[0]?.competitors?.find(
+      c => c.homeAway === "home"
+    )?.team?.displayName ||
+    "Équipe locale";
+
+  const awayTeam =
+    match?.competitions?.[0]?.competitors?.find(
+      c => c.homeAway === "away"
+    )?.team?.displayName ||
+    "Équipe visiteuse";
+
+  const athlete =
+    event?.athletesInvolved?.[0]?.displayName ||
+    event?.athlete?.displayName ||
+    event?.participants?.[0]?.athlete?.displayName ||
+    "";
+
+  const minute =
+    event?.clock?.displayValue ||
+    event?.time?.displayValue ||
+    "";
+
+  let title = "";
+
+  switch (eventType) {
+    case "GOAL":
+      title = "⚽ BUT !";
+      break;
+
+    case "OWN_GOAL":
+      title = "😱 BUT CONTRE SON CAMP !";
+      break;
+
+    case "PENALTY_GOAL":
+      title = "⚽ PENALTY TRANSFORMÉ !";
+      break;
+
+    case "MISSED_PENALTY":
+      title = "❌ PENALTY RATÉ !";
+      break;
+
+    case "PENALTY_AWARDED":
+      title = "🟨 PENALTY !";
+      break;
+
+    case "CANCELLED_GOAL":
+      title = "🚫 BUT ANNULÉ !";
+      break;
+
+    case "YELLOW_CARD":
+      title = "🟨 CARTON JAUNE !";
+      break;
+
+    case "RED_CARD":
+      title = "🟥 CARTON ROUGE !";
+      break;
+
+    case "SECOND_YELLOW_RED":
+      title = "🟥 DEUXIÈME JAUNE — EXPULSION !";
+      break;
+
+    default:
+      title = "⚽ ACTION !";
+  }
+
+  return `${title}
+
+🏆 ${competitionName}
+${homeTeam} vs ${awayTeam}
+${athlete ? `👤 ${athlete}` : ""}
+${minute ? `⏱️ ${minute}` : ""}
+
+🌍 GlobalFoot`;
+}
+
+// ======================================================
 // FACEBOOK
-// =====================================================
+// ======================================================
 
 async function publishToFacebook(
   message,
-  token
+  env
 ) {
-
-  if (!token) {
-
-    return {
-      ok: false,
-      data: {
-        error:
-          "FACEBOOK_PAGE_TOKEN absent"
-      }
-    };
+  if (!env.FACEBOOK_PAGE_TOKEN) {
+    throw new Error(
+      "FACEBOOK_PAGE_TOKEN absent"
+    );
   }
+
+  const url =
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${PAGE_ID}/feed`;
 
   const body =
-    new URLSearchParams({
-      message,
-      access_token: token
-    });
+    new URLSearchParams();
+
+  body.set(
+    "message",
+    message
+  );
+
+  body.set(
+    "access_token",
+    env.FACEBOOK_PAGE_TOKEN
+  );
 
   const response =
-    await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${PAGE_ID}/feed`,
-      {
-        method: "POST",
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded"
+      },
+      body
+    });
 
-        headers: {
-          "content-type":
-            "application/x-www-form-urlencoded"
-        },
+  const text =
+    await response.text();
 
-        body
-      }
+  console.log(
+    "📘 Facebook response : HTTP",
+    response.status
+  );
+
+  console.log(
+    "📘 Facebook body :",
+    text.slice(0, 1000)
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Facebook HTTP ${response.status}: ${text}`
     );
-
-  let data;
-
-  try {
-
-    data =
-      await response.json();
-
-  } catch {
-
-    data = {
-      error:
-        "Réponse Facebook non JSON"
-    };
   }
 
-  return {
-
-    ok:
-      response.ok &&
-      !data?.error &&
-      Boolean(data?.id),
-
-    data
-  };
-      }
+  return text;
+                   }
