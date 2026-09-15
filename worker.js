@@ -130,6 +130,11 @@ async function fetchPlay(refObject) {
     null;
 
   if (!ref) {
+    console.log("❌ Aucun $ref trouvé");
+    console.log(
+      "📦 PLAY REF :",
+      JSON.stringify(refObject).slice(0, 1000)
+    );
     return null;
   }
 
@@ -140,41 +145,63 @@ async function fetchPlay(refObject) {
     "https://"
   );
 
+  console.log("");
+  console.log("🔗 REF ESPN :");
+  console.log(url);
+
   try {
 
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json,text/plain,*/*"
+        "Accept": "application/json"
       }
     });
 
     const text = await response.text();
 
+    console.log(
+      `📡 REF RESPONSE : HTTP ${response.status}`
+    );
+
+    console.log(
+      "📦 REF DATA :",
+      text.slice(0, 3000)
+    );
+
     if (!response.ok) {
-      console.log(
-        `❌ PLAY HTTP ${response.status}`
-      );
       return null;
     }
 
     try {
-      return JSON.parse(text);
-    } catch {
+
+      const data = JSON.parse(text);
+
+      console.log("✅ REF JSON REÇU");
+
       console.log(
-        `❌ PLAY non-JSON : ${text.slice(0, 300)}`
+        "🔑 REF KEYS :",
+        Object.keys(data)
       );
+
+      return data;
+
+    } catch {
+
+      console.log("❌ REF NON-JSON");
+
       return null;
     }
 
   } catch (error) {
 
     console.log(
-      `❌ Erreur PLAY : ${error.message}`
+      `❌ ERREUR REF : ${error.message}`
     );
 
     return null;
   }
+}
 }
 
 
