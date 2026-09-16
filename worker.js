@@ -12,9 +12,6 @@ const GROUPS = {
 const ESPN_CDN =
   "https://cdn.espn.com/core/soccer/scoreboard?xhr=1&league=";
 
-const ESPN_CORE =
-  "https://sports.core.api.espn.com/v2/sports/soccer/leagues";
-
 
 // ============================================================
 // FETCH ESPN
@@ -49,7 +46,7 @@ async function fetchESPN(url) {
 
 
 // ============================================================
-// SCOREBOARD
+// EXTRACTION SCOREBOARD
 // ============================================================
 
 function extractScoreboardData(data) {
@@ -77,335 +74,141 @@ function extractScoreboardData(data) {
 
 
 // ============================================================
-// PLAY-BY-PLAY — DIAGNOSTIC COMPLET
+// EXTRACTION DU SCORE
 // ============================================================
 
-async function getPlayRefs(competition, gameId) {
+function extractMatchScore(match) {
 
-  const url =
-    `${ESPN_CORE}/${competition}` +
-    `/events/${gameId}` +
-    `/competitions/${gameId}/plays?limit=300`;
+  const competition =
+    match?.competitions?.[0];
 
-  try {
-
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json,text/plain,*/*"
-      }
-    });
-
-    const text = await response.text();
-
-    console.log("");
-    console.log("==============================================");
-    console.log("🛠️ DEBUG PLAY-BY-PLAY");
-    console.log("==============================================");
-
-    console.log(`🌐 URL : ${url}`);
-    console.log(`🛰️ HTTP : ${response.status}`);
-    console.log(`📏 TAILLE : ${text.length}`);
-
-    console.log("");
-    console.log("📦 RÉPONSE ESPN COMPLÈTE :");
-    console.log(text);
-
-    console.log("");
-    console.log("==============================================");
-
-    if (!response.ok) {
-
-      console.log(
-        `❌ PLAY HTTP ${response.status}`
-      );
-
-      return [];
-    }
-
-    let data;
-
-    try {
-
-      data = JSON.parse(text);
-
-    } catch {
-
-      console.log(
-        "❌ PLAY RESPONSE NON-JSON"
-      );
-
-      return [];
-    }
-
-    console.log("");
-    console.log("🔑 TYPE ESPN :");
-
-    if (Array.isArray(data)) {
-      console.log("ARRAY");
-    } else {
-      console.log("OBJECT");
-    }
-
-    console.log("");
-    console.log("🔑 CLÉS ESPN :");
-
-    if (data && typeof data === "object") {
-      console.log(
-        Object.keys(data)
-      );
-    }
-
-    // --------------------------------------------------------
-    // FORMAT ARRAY
-    // --------------------------------------------------------
-
-    if (Array.isArray(data)) {
-
-      console.log(
-        `📚 PLAY ARRAY : ${data.length}`
-      );
-
-      if (data.length > 0) {
-
-        console.log("");
-        console.log("🔗 PREMIER ÉLÉMENT :");
-
-        console.log(
-          JSON.stringify(
-            data[0],
-            null,
-            2
-          ).slice(0, 5000)
-        );
-      }
-
-      return data;
-    }
-
-
-    // --------------------------------------------------------
-    // FORMAT ITEMS
-    // --------------------------------------------------------
-
-    if (Array.isArray(data.items)) {
-
-      console.log(
-        `📚 PLAY ITEMS : ${data.items.length}`
-      );
-
-      if (data.items.length > 0) {
-
-        console.log("");
-        console.log("🔗 PREMIER ITEM :");
-
-        console.log(
-          JSON.stringify(
-            data.items[0],
-            null,
-            2
-          ).slice(0, 5000)
-        );
-      }
-
-      return data.items;
-    }
-
-
-    // --------------------------------------------------------
-    // FORMAT PLAYS
-    // --------------------------------------------------------
-
-    if (Array.isArray(data.plays)) {
-
-      console.log(
-        `📚 PLAY PLAYS : ${data.plays.length}`
-      );
-
-      return data.plays;
-    }
-
-
-    // --------------------------------------------------------
-    // FORMAT EVENTS
-    // --------------------------------------------------------
-
-    if (Array.isArray(data.events)) {
-
-      console.log(
-        `📚 PLAY EVENTS : ${data.events.length}`
-      );
-
-      return data.events;
-    }
-
-
-    // --------------------------------------------------------
-    // ESPN $REF
-    // --------------------------------------------------------
-
-    if (data.$ref) {
-
-      console.log("");
-      console.log("🔗 ESPN $REF TROUVÉ :");
-
-      console.log(
-        data.$ref
-      );
-
-      return [
-        {
-          $ref: data.$ref
-        }
-      ];
-    }
-
-
-    // --------------------------------------------------------
-    // ESPN LINKS
-    // --------------------------------------------------------
-
-    if (data.links) {
-
-      console.log("");
-      console.log("🔗 ESPN LINKS TROUVÉS :");
-
-      console.log(
-        JSON.stringify(
-          data.links,
-          null,
-          2
-        ).slice(0, 5000)
-      );
-    }
-
-
-    // --------------------------------------------------------
-    // AUCUN FORMAT RECONNU
-    // --------------------------------------------------------
-
-    console.log("");
-    console.log(
-      "⚠️ Aucun format Play-by-Play reconnu."
-    );
-
-    console.log(
-      "📦 OBJET COMPLET :"
-    );
-
-    console.log(
-      JSON.stringify(
-        data,
-        null,
-        2
-      ).slice(0, 10000)
-    );
-
-    console.log(
-      "=============================================="
-    );
-
-    return [];
-
-  } catch (error) {
-
-    console.log(
-      `❌ ERREUR PLAY : ${error.message}`
-    );
-
-    return [];
+  if (!competition) {
+    return null;
   }
+
+  const competitors =
+    competition.competitors || [];
+
+  let home = null;
+  let away = null;
+
+  for (const team of competitors) {
+
+    const score =
+      Number(team?.score ?? 0);
+
+    if (team?.homeAway === "home") {
+      home = score;
+    }
+
+    if (team?.homeAway === "away") {
+      away = score;
+    }
+  }
+
+  if (home === null || away === null) {
+    return null;
+  }
+
+  return {
+    home,
+    away
+  };
 }
 
 
 // ============================================================
-// FETCH UNE ACTION ESPN
+// NOM DES ÉQUIPES
 // ============================================================
 
-async function fetchPlay(refObject) {
+function extractTeams(match) {
 
-  const ref =
-    refObject?.$ref ||
-    refObject?.ref ||
-    null;
+  const competitors =
+    match?.competitions?.[0]?.competitors || [];
 
-  if (!ref) {
+  let homeTeam = "Équipe domicile";
+  let awayTeam = "Équipe extérieure";
 
-    console.log(
-      "❌ Aucun $ref trouvé"
+  for (const team of competitors) {
+
+    const name =
+      team?.team?.displayName ||
+      team?.team?.name ||
+      team?.displayName ||
+      "Équipe";
+
+    if (team?.homeAway === "home") {
+      homeTeam = name;
+    }
+
+    if (team?.homeAway === "away") {
+      awayTeam = name;
+    }
+  }
+
+  return {
+    homeTeam,
+    awayTeam
+  };
+}
+
+
+// ============================================================
+// STATUT DU MATCH
+// ============================================================
+
+function getMatchStatus(match) {
+
+  const status =
+    match?.competitions?.[0]?.status ||
+    match?.status ||
+    {};
+
+  return (
+    status?.type?.name ||
+    status?.type?.description ||
+    status?.type?.shortDetail ||
+    "UNKNOWN"
+  );
+}
+
+
+// ============================================================
+// CLÉ KV
+// ============================================================
+
+function getGameKey(competition, gameId) {
+
+  return `match:${competition}:${gameId}`;
+}
+
+
+// ============================================================
+// LECTURE KV
+// ============================================================
+
+async function getSavedScore(env, key) {
+
+  if (!env.GLOBALFOOT_KV) {
+
+    throw new Error(
+      "❌ KV GLOBALFOOT_KV introuvable dans les bindings."
     );
+  }
 
-    console.log(
-      JSON.stringify(
-        refObject
-      ).slice(0, 2000)
-    );
+  const value =
+    await env.GLOBALFOOT_KV.get(key);
 
+  if (!value) {
     return null;
   }
 
-  const url =
-    ref.replace(
-      /^http:\/\//i,
-      "https://"
-    );
-
-  console.log("");
-  console.log("🔗 REF ESPN :");
-  console.log(url);
-
   try {
-
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
-      }
-    });
-
-    const text =
-      await response.text();
+    return JSON.parse(value);
+  } catch {
 
     console.log(
-      `📡 REF RESPONSE : HTTP ${response.status}`
-    );
-
-    console.log(
-      "📦 REF DATA :"
-    );
-
-    console.log(
-      text.slice(0, 5000)
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    try {
-
-      const data =
-        JSON.parse(text);
-
-      console.log(
-        "✅ REF JSON REÇU"
-      );
-
-      return data;
-
-    } catch {
-
-      console.log(
-        "❌ REF NON-JSON"
-      );
-
-      return null;
-    }
-
-  } catch (error) {
-
-    console.log(
-      `❌ ERREUR REF : ${error.message}`
+      `⚠️ Valeur KV invalide pour ${key}`
     );
 
     return null;
@@ -414,141 +217,252 @@ async function fetchPlay(refObject) {
 
 
 // ============================================================
-// INSPECTION MATCH
+// ÉCRITURE KV
 // ============================================================
 
-async function inspectLiveGame(
-  competition,
-  gameId,
-  gameName
+async function saveScore(
+  env,
+  key,
+  score
 ) {
 
-  console.log("");
-  console.log("===============================");
-  console.log(`🟣 ${competition}/${gameId}`);
-  console.log(`⚽ ${gameName}`);
-  console.log("🔎 INSPECTION MATCH");
-  console.log("===============================");
+  if (!env.GLOBALFOOT_KV) {
 
-  const refs =
-    await getPlayRefs(
+    throw new Error(
+      "❌ KV GLOBALFOOT_KV introuvable dans les bindings."
+    );
+  }
+
+  await env.GLOBALFOOT_KV.put(
+    key,
+    JSON.stringify(score)
+  );
+}
+
+
+// ============================================================
+// DÉTECTION DU BUT
+// ============================================================
+
+async function detectGoal(
+  env,
+  competition,
+  gameId,
+  gameName,
+  currentScore
+) {
+
+  const key =
+    getGameKey(
       competition,
       gameId
     );
 
-  if (!refs.length) {
-
-    console.log(
-      "⚠️ Aucune référence Play-by-Play"
+  const previousScore =
+    await getSavedScore(
+      env,
+      key
     );
 
-    return;
+
+  // ----------------------------------------------------------
+  // PREMIÈRE OBSERVATION
+  // ----------------------------------------------------------
+
+  if (!previousScore) {
+
+    console.log(
+      `🆕 Première observation : ${gameName}`
+    );
+
+    console.log(
+      `💾 Score initial enregistré : ` +
+      `${currentScore.home}-${currentScore.away}`
+    );
+
+    await saveScore(
+      env,
+      key,
+      currentScore
+    );
+
+    return {
+      detected: false,
+      firstObservation: true
+    };
   }
 
-  console.log(
-    `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
-  );
 
-  const recentRefs =
-    refs.slice(-8);
+  // ----------------------------------------------------------
+  // AFFICHAGE
+  // ----------------------------------------------------------
 
   console.log(
-    `🔬 Analyse des ${recentRefs.length} dernières références`
+    `📊 Ancien score : ` +
+    `${previousScore.home}-${previousScore.away}`
   );
 
-  const plays = [];
+  console.log(
+    `📊 Nouveau score : ` +
+    `${currentScore.home}-${currentScore.away}`
+  );
 
-  for (const ref of recentRefs) {
 
-    const play =
-      await fetchPlay(ref);
+  // ----------------------------------------------------------
+  // CALCUL
+  // ----------------------------------------------------------
 
-    if (play) {
-      plays.push(play);
-    }
+  const homeGoals =
+    currentScore.home -
+    previousScore.home;
+
+  const awayGoals =
+    currentScore.away -
+    previousScore.away;
+
+
+  // ----------------------------------------------------------
+  // AUCUN CHANGEMENT
+  // ----------------------------------------------------------
+
+  if (
+    homeGoals <= 0 &&
+    awayGoals <= 0
+  ) {
+
+    console.log(
+      "⚪ Aucun nouveau but."
+    );
+
+    // On garde quand même le score actuel.
+    await saveScore(
+      env,
+      key,
+      currentScore
+    );
+
+    return {
+      detected: false
+    };
   }
 
-  console.log(
-    `✅ ${plays.length} actions récupérées`
-  );
 
-  plays.sort(
-    (a, b) =>
-      (a.clock?.value || 0) -
-      (b.clock?.value || 0)
-  );
+  // ----------------------------------------------------------
+  // NOUVEAU BUT / NOUVEAUX BUTS
+  // ----------------------------------------------------------
 
   console.log("");
   console.log("==============================================");
-  console.log("📋 ACTIONS");
+  console.log("⚽⚽⚽ NOUVEAU BUT DÉTECTÉ ⚽⚽⚽");
   console.log("==============================================");
 
-  for (const play of plays) {
+  console.log(
+    `🏆 Compétition : ${competition}`
+  );
+
+  console.log(
+    `⚽ Match : ${gameName}`
+  );
+
+  console.log(
+    `📊 Avant : ` +
+    `${previousScore.home}-${previousScore.away}`
+  );
+
+  console.log(
+    `📊 Maintenant : ` +
+    `${currentScore.home}-${currentScore.away}`
+  );
+
+
+  if (homeGoals > 0) {
 
     console.log(
-      `⏱️ ${play.clock?.displayValue || "?"} | ` +
-      `${play.text || "Action"} | ` +
-      `scoringPlay=${play.scoringPlay}`
+      `🏠 ${homeGoals} but(s) pour l'équipe domicile`
     );
   }
 
-  const goals =
-    plays.filter(
-      play =>
-        play.scoringPlay === true
-    );
-
-  if (!goals.length) {
+  if (awayGoals > 0) {
 
     console.log(
-      "⚪ Aucun but détecté."
+      `✈️ ${awayGoals} but(s) pour l'équipe extérieure`
     );
-
-  } else {
-
-    console.log("");
-    console.log("==============================================");
-    console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
-    console.log("==============================================");
-
-    for (const goal of goals) {
-
-      console.log(
-        `🆔 Play ID : ${goal.id}`
-      );
-
-      console.log(
-        `📝 ${goal.text || "N/A"}`
-      );
-
-      console.log(
-        `⏱️ ${goal.clock?.displayValue || "N/A"}`
-      );
-
-      console.log(
-        `🏠 ${goal.homeScore}`
-      );
-
-      console.log(
-        `✈️ ${goal.awayScore}`
-      );
-    }
   }
+
+
+  // ----------------------------------------------------------
+  // SAUVEGARDE IMMÉDIATE
+  // ----------------------------------------------------------
+
+  await saveScore(
+    env,
+    key,
+    currentScore
+  );
+
+
+  return {
+    detected: true,
+    homeGoals,
+    awayGoals,
+    previousScore,
+    currentScore
+  };
 }
 
 
 // ============================================================
-// SCAN COMPÉTITION
+// PUBLICATION FACEBOOK
 // ============================================================
 
-async function scanCompetition(
-  competition
+async function publishToFacebook(
+  goal,
+  competition,
+  gameName
 ) {
 
   console.log("");
+  console.log("📘 FACEBOOK");
+  console.log("----------------------------------------------");
+
+  /*
+   * La publication Facebook sera branchée ici.
+   *
+   * Pour le moment, on ne publie rien afin de tester
+   * correctement la détection des buts avec le KV.
+   */
+
   console.log(
-    `🔍 Scan compétition : ${competition}`
+    `📌 PUBLICATION À BRANCHER : ${gameName}`
   );
+
+  console.log(
+    `📊 Score : ` +
+    `${goal.currentScore.home}-${goal.currentScore.away}`
+  );
+
+  console.log(
+    `🏆 Compétition : ${competition}`
+  );
+}
+
+
+// ============================================================
+// SCAN D'UNE COMPÉTITION
+// ============================================================
+
+async function scanCompetition(
+  competition,
+  env
+) {
+
+  console.log("");
+  console.log("==============================================");
+  console.log(
+    `🔍 SCAN COMPÉTITION : ${competition}`
+  );
+  console.log("==============================================");
+
 
   try {
 
@@ -560,8 +474,10 @@ async function scanCompetition(
         )
       );
 
+
     const sbData =
       extractScoreboardData(data);
+
 
     if (!sbData) {
 
@@ -572,14 +488,22 @@ async function scanCompetition(
       return;
     }
 
+
     const matches =
       sbData.events ||
       sbData.games ||
       [];
 
+
     console.log(
-      `⚽ ESPN CDN ${competition}: ${matches.length} match(s)`
+      `⚽ ESPN CDN ${competition}: ` +
+      `${matches.length} match(s)`
     );
+
+
+    // --------------------------------------------------------
+    // MATCHS
+    // --------------------------------------------------------
 
     for (const match of matches) {
 
@@ -587,34 +511,110 @@ async function scanCompetition(
         match.id ||
         match.eventId;
 
+
       if (!gameId) {
         continue;
       }
+
 
       const gameName =
         match.name ||
         match.shortName ||
         "Match";
 
+
+      const score =
+        extractMatchScore(
+          match
+        );
+
+
+      const teams =
+        extractTeams(
+          match
+        );
+
+
+      const status =
+        getMatchStatus(
+          match
+        );
+
+
+      console.log("");
+      console.log("----------------------------------------------");
+
       console.log(
-        `📌 Match ${competition}/${gameId}`
+        `📌 Match : ${competition}/${gameId}`
       );
 
       console.log(
         `⚽ ${gameName}`
       );
 
-      await inspectLiveGame(
-        competition,
-        gameId,
-        gameName
+      console.log(
+        `🏠 ${teams.homeTeam}`
       );
+
+      console.log(
+        `✈️ ${teams.awayTeam}`
+      );
+
+      console.log(
+        `📊 Statut : ${status}`
+      );
+
+
+      if (!score) {
+
+        console.log(
+          "⚠️ Impossible de lire le score."
+        );
+
+        continue;
+      }
+
+
+      console.log(
+        `📊 SCORE ACTUEL : ` +
+        `${score.home}-${score.away}`
+      );
+
+
+      // ------------------------------------------------------
+      // DÉTECTION
+      // ------------------------------------------------------
+
+      const goal =
+        await detectGoal(
+          env,
+          competition,
+          gameId,
+          gameName,
+          score
+        );
+
+
+      // ------------------------------------------------------
+      // BUT DÉTECTÉ
+      // ------------------------------------------------------
+
+      if (goal.detected) {
+
+        await publishToFacebook(
+          goal,
+          competition,
+          gameName
+        );
+      }
     }
+
 
   } catch (error) {
 
     console.log(
-      `❌ Erreur scan ${competition}: ${error.message}`
+      `❌ Erreur scan ${competition}: ` +
+      `${error.message}`
     );
   }
 }
@@ -626,22 +626,41 @@ async function scanCompetition(
 
 export default {
 
-  async scheduled(event, env, ctx) {
+  async scheduled(
+    event,
+    env,
+    ctx
+  ) {
 
     console.log("");
     console.log("==============================================");
     console.log("🌍 GLOBALFOOT CRON");
     console.log("==============================================");
 
+    console.log(
+      "⏰ Déclenchement automatique toutes les 5 minutes"
+    );
+
+
     const competitions =
       GROUPS["*/5 * * * *"] || [];
 
-    for (const competition of competitions) {
+
+    console.log(
+      `🏆 Compétitions : ${competitions.join(", ")}`
+    );
+
+
+    for (
+      const competition of competitions
+    ) {
 
       await scanCompetition(
-        competition
+        competition,
+        env
       );
     }
+
 
     console.log("");
     console.log("==============================================");
@@ -649,10 +668,21 @@ export default {
     console.log("==============================================");
   },
 
-  async fetch(request, env) {
+
+  // ==========================================================
+  // TEST MANUEL
+  // ==========================================================
+
+  async fetch(
+    request,
+    env
+  ) {
 
     return new Response(
-      "🌍 GlobalFoot Worker actif.",
+      "🌍 GlobalFoot Worker actif.\n" +
+      "KV : GLOBALFOOT_KV\n" +
+      "Compétitions : ENG / FRA / ESP\n" +
+      "Détection : Scoreboard ESPN + KV",
       {
         status: 200,
         headers: {
