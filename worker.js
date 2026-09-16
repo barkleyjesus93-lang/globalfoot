@@ -77,7 +77,7 @@ function extractScoreboardData(data) {
 
 
 // ============================================================
-// RÉCUPÉRER LES RÉFÉRENCES PLAY-BY-PLAY
+// PLAY-BY-PLAY — DIAGNOSTIC COMPLET
 // ============================================================
 
 async function getPlayRefs(competition, gameId) {
@@ -92,7 +92,7 @@ async function getPlayRefs(competition, gameId) {
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
+        "Accept": "application/json,text/plain,*/*"
       }
     });
 
@@ -100,20 +100,24 @@ async function getPlayRefs(competition, gameId) {
 
     console.log("");
     console.log("==============================================");
-    console.log("🧪 DEBUG PLAY-BY-PLAY");
+    console.log("🛠️ DEBUG PLAY-BY-PLAY");
     console.log("==============================================");
 
     console.log(`🌐 URL : ${url}`);
-    console.log(`📡 HTTP : ${response.status}`);
-    console.log(`📦 TAILLE : ${text.length}`);
+    console.log(`🛰️ HTTP : ${response.status}`);
+    console.log(`📏 TAILLE : ${text.length}`);
 
-    console.log("📦 RÉPONSE ESPN :");
-    console.log(text.slice(0, 5000));
+    console.log("");
+    console.log("📦 RÉPONSE ESPN COMPLÈTE :");
+    console.log(text);
+
+    console.log("");
+    console.log("==============================================");
 
     if (!response.ok) {
 
       console.log(
-        `❌ ESPN PLAY HTTP ${response.status}`
+        `❌ PLAY HTTP ${response.status}`
       );
 
       return [];
@@ -128,70 +132,185 @@ async function getPlayRefs(competition, gameId) {
     } catch {
 
       console.log(
-        "❌ Réponse Play-by-Play non JSON"
+        "❌ PLAY RESPONSE NON-JSON"
       );
 
       return [];
     }
 
     console.log("");
-    console.log("🔑 STRUCTURE RACINE :");
-    console.log(
-      Object.keys(data)
-    );
+    console.log("🔑 TYPE ESPN :");
 
-    let refs = [];
-
-    // Format ESPN Core classique
-    if (Array.isArray(data.items)) {
-
-      refs = data.items;
-
-    }
-
-    // Autre format
-    else if (Array.isArray(data.plays)) {
-
-      refs = data.plays;
-
-    }
-
-    // Autre possibilité
-    else if (Array.isArray(data.events)) {
-
-      refs = data.events;
-
+    if (Array.isArray(data)) {
+      console.log("ARRAY");
+    } else {
+      console.log("OBJECT");
     }
 
     console.log("");
-    console.log(
-      `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
-    );
+    console.log("🔑 CLÉS ESPN :");
 
-    if (refs.length > 0) {
+    if (data && typeof data === "object") {
+      console.log(
+        Object.keys(data)
+      );
+    }
+
+    // --------------------------------------------------------
+    // FORMAT ARRAY
+    // --------------------------------------------------------
+
+    if (Array.isArray(data)) {
+
+      console.log(
+        `📚 PLAY ARRAY : ${data.length}`
+      );
+
+      if (data.length > 0) {
+
+        console.log("");
+        console.log("🔗 PREMIER ÉLÉMENT :");
+
+        console.log(
+          JSON.stringify(
+            data[0],
+            null,
+            2
+          ).slice(0, 5000)
+        );
+      }
+
+      return data;
+    }
+
+
+    // --------------------------------------------------------
+    // FORMAT ITEMS
+    // --------------------------------------------------------
+
+    if (Array.isArray(data.items)) {
+
+      console.log(
+        `📚 PLAY ITEMS : ${data.items.length}`
+      );
+
+      if (data.items.length > 0) {
+
+        console.log("");
+        console.log("🔗 PREMIER ITEM :");
+
+        console.log(
+          JSON.stringify(
+            data.items[0],
+            null,
+            2
+          ).slice(0, 5000)
+        );
+      }
+
+      return data.items;
+    }
+
+
+    // --------------------------------------------------------
+    // FORMAT PLAYS
+    // --------------------------------------------------------
+
+    if (Array.isArray(data.plays)) {
+
+      console.log(
+        `📚 PLAY PLAYS : ${data.plays.length}`
+      );
+
+      return data.plays;
+    }
+
+
+    // --------------------------------------------------------
+    // FORMAT EVENTS
+    // --------------------------------------------------------
+
+    if (Array.isArray(data.events)) {
+
+      console.log(
+        `📚 PLAY EVENTS : ${data.events.length}`
+      );
+
+      return data.events;
+    }
+
+
+    // --------------------------------------------------------
+    // ESPN $REF
+    // --------------------------------------------------------
+
+    if (data.$ref) {
 
       console.log("");
-      console.log("🔗 PREMIÈRE RÉFÉRENCE :");
+      console.log("🔗 ESPN $REF TROUVÉ :");
+
+      console.log(
+        data.$ref
+      );
+
+      return [
+        {
+          $ref: data.$ref
+        }
+      ];
+    }
+
+
+    // --------------------------------------------------------
+    // ESPN LINKS
+    // --------------------------------------------------------
+
+    if (data.links) {
+
+      console.log("");
+      console.log("🔗 ESPN LINKS TROUVÉS :");
 
       console.log(
         JSON.stringify(
-          refs[0],
+          data.links,
           null,
           2
-        ).slice(0, 3000)
+        ).slice(0, 5000)
       );
     }
+
+
+    // --------------------------------------------------------
+    // AUCUN FORMAT RECONNU
+    // --------------------------------------------------------
+
+    console.log("");
+    console.log(
+      "⚠️ Aucun format Play-by-Play reconnu."
+    );
+
+    console.log(
+      "📦 OBJET COMPLET :"
+    );
+
+    console.log(
+      JSON.stringify(
+        data,
+        null,
+        2
+      ).slice(0, 10000)
+    );
 
     console.log(
       "=============================================="
     );
 
-    return refs;
+    return [];
 
   } catch (error) {
 
     console.log(
-      `❌ Play refs ${competition}/${gameId}: ${error.message}`
+      `❌ ERREUR PLAY : ${error.message}`
     );
 
     return [];
@@ -200,7 +319,7 @@ async function getPlayRefs(competition, gameId) {
 
 
 // ============================================================
-// RÉCUPÉRER UNE VRAIE ACTION À PARTIR DU $ref
+// FETCH UNE ACTION ESPN
 // ============================================================
 
 async function fetchPlay(refObject) {
@@ -212,20 +331,24 @@ async function fetchPlay(refObject) {
 
   if (!ref) {
 
-    console.log("❌ Aucun $ref trouvé");
+    console.log(
+      "❌ Aucun $ref trouvé"
+    );
 
     console.log(
-      "📦 PLAY REF :",
-      JSON.stringify(refObject).slice(0, 1000)
+      JSON.stringify(
+        refObject
+      ).slice(0, 2000)
     );
 
     return null;
   }
 
-  const url = ref.replace(
-    /^http:\/\//i,
-    "https://"
-  );
+  const url =
+    ref.replace(
+      /^http:\/\//i,
+      "https://"
+    );
 
   console.log("");
   console.log("🔗 REF ESPN :");
@@ -240,15 +363,19 @@ async function fetchPlay(refObject) {
       }
     });
 
-    const text = await response.text();
+    const text =
+      await response.text();
 
     console.log(
       `📡 REF RESPONSE : HTTP ${response.status}`
     );
 
     console.log(
-      "📦 REF DATA :",
-      text.slice(0, 3000)
+      "📦 REF DATA :"
+    );
+
+    console.log(
+      text.slice(0, 5000)
     );
 
     if (!response.ok) {
@@ -257,20 +384,20 @@ async function fetchPlay(refObject) {
 
     try {
 
-      const data = JSON.parse(text);
-
-      console.log("✅ REF JSON REÇU");
+      const data =
+        JSON.parse(text);
 
       console.log(
-        "🔑 REF KEYS :",
-        Object.keys(data)
+        "✅ REF JSON REÇU"
       );
 
       return data;
 
     } catch {
 
-      console.log("❌ REF NON-JSON");
+      console.log(
+        "❌ REF NON-JSON"
+      );
 
       return null;
     }
@@ -287,7 +414,7 @@ async function fetchPlay(refObject) {
 
 
 // ============================================================
-// INSPECTION DU MATCH
+// INSPECTION MATCH
 // ============================================================
 
 async function inspectLiveGame(
@@ -297,11 +424,11 @@ async function inspectLiveGame(
 ) {
 
   console.log("");
-  console.log("==============================================");
-  console.log("🔎 INSPECTION MATCH");
+  console.log("===============================");
+  console.log(`🟣 ${competition}/${gameId}`);
   console.log(`⚽ ${gameName}`);
-  console.log(`🆔 ${competition}/${gameId}`);
-  console.log("==============================================");
+  console.log("🔎 INSPECTION MATCH");
+  console.log("===============================");
 
   const refs =
     await getPlayRefs(
@@ -319,7 +446,7 @@ async function inspectLiveGame(
   }
 
   console.log(
-    `📚 ${refs.length} références reçues`
+    `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
   );
 
   const recentRefs =
@@ -331,22 +458,18 @@ async function inspectLiveGame(
 
   const plays = [];
 
-  for (let i = 0; i < recentRefs.length; i++) {
+  for (const ref of recentRefs) {
 
     const play =
-      await fetchPlay(
-        recentRefs[i]
-      );
+      await fetchPlay(ref);
 
-    if (!play) {
-      continue;
+    if (play) {
+      plays.push(play);
     }
-
-    plays.push(play);
   }
 
   console.log(
-    `✅ ${plays.length} vraies actions récupérées`
+    `✅ ${plays.length} actions récupérées`
   );
 
   plays.sort(
@@ -357,7 +480,7 @@ async function inspectLiveGame(
 
   console.log("");
   console.log("==============================================");
-  console.log("📋 ACTIONS TRIÉES");
+  console.log("📋 ACTIONS");
   console.log("==============================================");
 
   for (const play of plays) {
@@ -371,21 +494,21 @@ async function inspectLiveGame(
 
   const goals =
     plays.filter(
-      play => play.scoringPlay === true
+      play =>
+        play.scoringPlay === true
     );
 
   if (!goals.length) {
 
-    console.log("");
     console.log(
-      "⚪ Aucun but détecté dans ces actions."
+      "⚪ Aucun but détecté."
     );
 
   } else {
 
     console.log("");
     console.log("==============================================");
-    console.log("⚽⚽⚽ BUT(S) DÉTECTÉ(S) ⚽⚽⚽");
+    console.log("⚽⚽⚽ BUT DÉTECTÉ ⚽⚽⚽");
     console.log("==============================================");
 
     for (const goal of goals) {
@@ -395,35 +518,22 @@ async function inspectLiveGame(
       );
 
       console.log(
-        `📝 Action : ${goal.text || "N/A"}`
+        `📝 ${goal.text || "N/A"}`
       );
 
       console.log(
-        `⏱️ Minute : ${goal.clock?.displayValue || "N/A"}`
+        `⏱️ ${goal.clock?.displayValue || "N/A"}`
       );
 
       console.log(
-        `🏠 Score domicile : ${goal.homeScore}`
+        `🏠 ${goal.homeScore}`
       );
 
       console.log(
-        `✈️ Score extérieur : ${goal.awayScore}`
-      );
-
-      console.log(
-        `⚽ Score value : ${goal.scoreValue || 0}`
-      );
-
-      console.log(
-        "=============================================="
+        `✈️ ${goal.awayScore}`
       );
     }
   }
-
-  console.log("");
-  console.log("==============================================");
-  console.log("✅ FIN INSPECTION");
-  console.log("==============================================");
 }
 
 
@@ -445,7 +555,9 @@ async function scanCompetition(
     const data =
       await fetchESPN(
         ESPN_CDN +
-        encodeURIComponent(competition)
+        encodeURIComponent(
+          competition
+        )
       );
 
     const sbData =
