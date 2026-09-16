@@ -89,20 +89,101 @@ async function getPlayRefs(competition, gameId) {
 
   try {
 
-    const data = await fetchESPN(url);
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json"
+      }
+    });
+
+    const text = await response.text();
+
+    console.log("");
+    console.log("==============================================");
+    console.log("🧪 DEBUG PLAY-BY-PLAY");
+    console.log("==============================================");
+
+    console.log(`🌐 URL : ${url}`);
+    console.log(`📡 HTTP : ${response.status}`);
+    console.log(`📦 TAILLE : ${text.length}`);
+
+    console.log("📦 RÉPONSE ESPN :");
+    console.log(text.slice(0, 5000));
+
+    if (!response.ok) {
+
+      console.log(
+        `❌ ESPN PLAY HTTP ${response.status}`
+      );
+
+      return [];
+    }
+
+    let data;
+
+    try {
+
+      data = JSON.parse(text);
+
+    } catch {
+
+      console.log(
+        "❌ Réponse Play-by-Play non JSON"
+      );
+
+      return [];
+    }
+
+    console.log("");
+    console.log("🔑 STRUCTURE RACINE :");
+    console.log(
+      Object.keys(data)
+    );
 
     let refs = [];
 
-    if (Array.isArray(data)) {
-      refs = data;
-    } else if (Array.isArray(data.items)) {
+    // Format ESPN Core classique
+    if (Array.isArray(data.items)) {
+
       refs = data.items;
-    } else if (Array.isArray(data.plays)) {
+
+    }
+
+    // Autre format
+    else if (Array.isArray(data.plays)) {
+
       refs = data.plays;
+
+    }
+
+    // Autre possibilité
+    else if (Array.isArray(data.events)) {
+
+      refs = data.events;
+
+    }
+
+    console.log("");
+    console.log(
+      `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
+    );
+
+    if (refs.length > 0) {
+
+      console.log("");
+      console.log("🔗 PREMIÈRE RÉFÉRENCE :");
+
+      console.log(
+        JSON.stringify(
+          refs[0],
+          null,
+          2
+        ).slice(0, 3000)
+      );
     }
 
     console.log(
-      `📚 PLAY REFS ${competition}/${gameId}: ${refs.length}`
+      "=============================================="
     );
 
     return refs;
@@ -130,11 +211,14 @@ async function fetchPlay(refObject) {
     null;
 
   if (!ref) {
+
     console.log("❌ Aucun $ref trouvé");
+
     console.log(
       "📦 PLAY REF :",
       JSON.stringify(refObject).slice(0, 1000)
     );
+
     return null;
   }
 
@@ -238,17 +322,12 @@ async function inspectLiveGame(
     `📚 ${refs.length} références reçues`
   );
 
-  /*
-    On récupère les dernières références,
-    puis on récupère les vraies actions ESPN.
-  */
-
   const recentRefs =
-  refs.slice(-8);
+    refs.slice(-8);
 
   console.log(
-  `🔬 Analyse des ${recentRefs.length} dernières références`
-);
+    `🔬 Analyse des ${recentRefs.length} dernières références`
+  );
 
   const plays = [];
 
@@ -270,15 +349,6 @@ async function inspectLiveGame(
     `✅ ${plays.length} vraies actions récupérées`
   );
 
-  /*
-    IMPORTANT :
-    ESPN peut renvoyer les références
-    dans un ordre inattendu.
-
-    On trie donc les actions par temps
-    de jeu avant de chercher un but.
-  */
-
   plays.sort(
     (a, b) =>
       (a.clock?.value || 0) -
@@ -299,10 +369,6 @@ async function inspectLiveGame(
     );
   }
 
-  /*
-    RECHERCHE DES BUTS
-  */
-
   const goals =
     plays.filter(
       play => play.scoringPlay === true
@@ -311,7 +377,9 @@ async function inspectLiveGame(
   if (!goals.length) {
 
     console.log("");
-    console.log("⚪ Aucun but détecté dans ces actions.");
+    console.log(
+      "⚪ Aucun but détecté dans ces actions."
+    );
 
   } else {
 
