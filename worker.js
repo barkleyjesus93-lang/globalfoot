@@ -5,7 +5,8 @@ const GROUPS = {
   "*/5 * * * *": [
     "eng.1",
     "fra.1",
-    "esp.1"
+    "esp.1",
+    "uefa.europa"
   ]
 };
 
